@@ -332,16 +332,26 @@ const ISTANBUL_DATA = {
   // hafta günceller.
   urgentProjectIds: [],
 
-  // İSKELET AŞAMASI (güncelleme: 2026-09-22): bu, ikmaps-istanbul (Avrupa
-  // yakası) uygulamasının Anadolu yakası muadilidir — aynı motor/mantık,
-  // AYRI proje portföyü. Gerçek Anadolu yakası proje verisi İK'dan
-  // gelmedi henüz; projects[] bilinçli olarak BOŞ bırakıldı. Veri geldiğinde
-  // ikmaps-istanbul'daki 2026-09-18 importuyla aynı pipeline izlenmeli (bkz.
-  // o projenin import notları): Konum linklerini koordinata çöz, accessStopId
-  // en yakın transitStops girdisiyle eşleştir, aynı alan şeması (id, name,
-  // sector, position, address, lat, lng, accessStopId, shift, salary, meal,
-  // transport, referral, gender).
-  projects: [],
+  // Gerçek Tepe Destek proje verisi — 2026-09-22 tarihinde İK'dan gelen
+  // "Proje Bilgileri (1) İST ANADOLU.xlsx" (Temizlik sayfası, satır 18-22)
+  // işlendi. Bu dosyanın 2-17. satırları ikmaps-istanbul'daki (Avrupa yakası)
+  // 16 projeyle birebir aynıydı, o yüzden buraya kopyalanmadı — burada sadece
+  // dosyaya yeni eklenen 5 proje var. Konum sütununda maps linki değil düz
+  // adres metni vardı; koordinatlar Nominatim/OSM ile adres bazlı çözüldü
+  // (maps.app.goo.gl linki yoktu). accessStopId en yakın transitStops
+  // girdisiyle eşleştirildi. Akbank Gebze ve Medicalpark Kocaeli projeleri
+  // İstanbul sınırları dışında (Kocaeli) — kullanıcı bunları Anadolu yakası
+  // uygulamasına dahil etmek istedi. Medicalpark Kocaeli en yakın raylı
+  // istasyona (Gebze) ~65 km — bu projenin ana rota motorunda kapsam dışı
+  // ("doğrulanamadı") çıkması beklenir, transit_network.json (İETT GTFS) da
+  // Kocaeli'yi kapsamıyor.
+  projects: [
+    { id: "proj_sabiha_gokcen_havalimani", name: "Sabiha Gökçen Havalimanı", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Kurtköy, Pendik", lat: 40.918454, lng: 29.321710, accessStopId: "stop_sabiha_gokcen_havalimani", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "41.773₺", meal: "Projede", transport: "Servis", referral: "Projeye yönlendirilecek — İK: Ali Berk Topçakar", gender: "Kadın/Erkek" },
+    { id: "proj_hilltown_avm", name: "Hilltown AVM", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Aydınevler, Maltepe", lat: 40.952614, lng: 29.122145, accessStopId: "stop_kucukyali", shift: "07.00-15.00/14.30-22.30", salary: "38.497₺", meal: "7.200₺", transport: "3.300₺", referral: "Projeye yönlendirilecek — Operasyon: Tolga Aydın / İK: Tarık Öznur", gender: "Kadın/Erkek" },
+    { id: "proj_medicalpark_goztepe", name: "Medicalpark Göztepe", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Göztepe, Kadıköy", lat: 40.987753, lng: 29.067699, accessStopId: "stop_goztepe", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.300₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç", gender: "Kadın/Erkek" },
+    { id: "proj_akbank_bankacilik_merkezi_gebze", name: "Akbank Bankacılık Merkezi - Gebze", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Şekerpınar, Çayırova, Kocaeli", lat: 40.860809, lng: 29.375146, accessStopId: "stop_gtu_fatih", shift: "07.00-15.00/15.00-23.00", salary: "36.333₺", meal: "16.900₺", transport: "Servis", referral: "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", gender: "Erkek" },
+    { id: "proj_medicalpark_kocaeli", name: "Medicalpark Kocaeli", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Başiskele, Kocaeli", lat: 40.729671, lng: 29.993913, accessStopId: "stop_gebze", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.000₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç / İK: Kerem Evcil", gender: "Kadın" },
+  ],
 
   // ---------------------------------------------------------------------
   // KAYNAK: OpenStreetMap / Overpass API (overpass-api.de), 2026-09-07
