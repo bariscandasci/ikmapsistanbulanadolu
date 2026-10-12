@@ -2230,7 +2230,7 @@ urgentModalSave.addEventListener("click", async () => {
       runSearch();
     }
   } catch (err) {
-    alert("Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.");
+    alert("Kaydedilemedi — " + (err && err.message ? err.message : "internet bağlantısını kontrol edip tekrar dene."));
   } finally {
     urgentModalSave.disabled = false;
     urgentModalSave.textContent = "Kaydet";
@@ -2319,7 +2319,7 @@ inactiveModalSave.addEventListener("click", async () => {
       runSearch();
     }
   } catch (err) {
-    alert("Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.");
+    alert("Kaydedilemedi — " + (err && err.message ? err.message : "internet bağlantısını kontrol edip tekrar dene."));
   } finally {
     inactiveModalSave.disabled = false;
     inactiveModalSave.textContent = "Kaydet";
@@ -2453,7 +2453,7 @@ addProjectForm.addEventListener("submit", async (e) => {
     closeAddProjectModal();
     if (currentMode === "origin-to-project" && originSelect.value) runSearch();
   } catch (err) {
-    addProjectStatus.textContent = "Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.";
+    addProjectStatus.textContent = "Kaydedilemedi — " + (err && err.message ? err.message : "internet bağlantısını kontrol edip tekrar dene.");
   } finally {
     addProjectSubmit.disabled = false;
   }

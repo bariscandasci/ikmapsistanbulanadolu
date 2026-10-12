@@ -5,10 +5,11 @@
  *
  * Kurulum: bu dosyayı, İstanbul için oluşturulan (Ankara'dan bağımsız) yeni
  * bir Google Sheet'te Uzantılar > Apps Script menüsünden açılan editöre
- * YAPIŞTIR, "seedIfEmpty" fonksiyonunu bir kez çalıştır (16 projeyi yazar),
- * sonra Dağıt > Yeni Dağıtım > Web Uygulaması (Execute as: Me, Who has
- * access: Anyone) ile yayınla. Çıkan /exec URL'ini ikmaps-istanbul/app.js'teki
- * SHEET_API_URL'e yapıştır (aday yorumları ve AI de aynı URL'i kullanır).
+ * YAPIŞTIR, "seedIfEmpty" fonksiyonunu bir kez çalıştır (21 projeyi yazar),
+ * sonra Dağıt > Yeni dağıtım > Web uygulaması (Yürütme: Ben, Erişim: Herkes)
+ * ile yayınla. Çıkan /exec URL'ini app.js içindeki SHEET_API_URL'e yapıştır
+ * (aday yorumları ve AI de aynı URL'i kullanır). Ankara'daki Apps Script
+ * URL'i buraya yapıştırılmamalı.
  * AI özellikleri için ayrıca Script Özellikleri'ne GEMINI_API_KEY ekle
  * (bkz. callGemini_). Sonraki kod güncellemelerinde "Dağıtımları yönet" ile
  * mevcut dağıtımın YENİ SÜRÜMÜNÜ yayınla (URL değişmez).
@@ -123,37 +124,38 @@ function findRowIndexById_(id) {
 
 /**
  * Tek seferlik kurulum yardımcısı: "Projeler" sekmesi tamamen boşsa (henüz
- * hiç satır eklenmemişse) data.js'teki 16 gerçek projeyi Sheet'e yazar.
+ * hiç satır eklenmemişse) data.js'teki 21 gerçek projeyi Sheet'e yazar.
  * Apps Script editöründe Çalıştır menüsünden manuel tetiklenir. Sheet'te
  * zaten veri varsa hiçbir şey yapmadan çıkar — güvenle tekrar çalıştırılabilir.
+ * Sütun sırası FIELDS ile aynıdır; sondaki iki değer capacity ve position.
  */
 function seedIfEmpty() {
   const sheet = getSheet_();
   if (sheet.getLastRow() > 1) return; // zaten veri var, dokunma
   const rows = [
-    ["proj_bezmialem_hastanesi_vatan_tem_hiz", "Bezmialem Hastanesi Vatan Tem. Hiz.", "Temizlik", "Topkapı, Fatih", 41.018829, 28.935077, "stop_capa_sehremini", "07.30-17.30", "28.000₺", "Yemekhane", "Servis", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Mustafa Kerem As", "Kadın/Erkek", false, true],
-    ["proj_calik_holding_temizlik_hizmeti", "Çalık Holding Temizlik Hizmeti", "Temizlik", "Esentepe, Zincirlikuyu", 41.071161, 29.015096, "stop_gayrettepe", "08.00-17.30", "29.000₺", "550₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", "Erkek", false, true],
-    ["proj_havas_istanbul_havalimani_tem_hiz", "Havaş İstanbul Havalimanı Tem. Hiz.", "Temizlik", "Tayakadın, Arnavutköy", 41.276148, 28.728735, "stop_istanbul_havalimani", "08.00-17.00/16.00-24.00", "34.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Ahmet Berat İmamoğlu", "Erkek", false, true],
-    ["proj_haribo_temizlik_hizmeti", "Haribo Temizlik Hizmeti", "Temizlik", "Ömerli, Arnavutköy", 41.124429, 28.633433, "stop_tasoluk", "08:00-17:00 / 16:00-24:00", "34.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true],
-    ["proj_kuzey_marmara_santiye_tem_hiz", "Kuzey Marmara Şantiye Tem. Hiz.", "Temizlik", "Sazlıdere, Başakşehir", 41.105915, 28.718574, "stop_kayasehir", "08:00-17:00", "30.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Kemal Çalış / İK: Ahmet Berat İmamoğlu", "Erkek", false, true],
-    ["proj_kadir_has_uni_cibali_ana_kampus_tem_hiz", "Kadir Has Üni. Cibali Ana Kampüs Tem. Hiz.", "Temizlik", "Cibali, Fatih", 41.024951, 28.958974, "stop_cibali", "07:00-16:00 / 07:00-17:00", "30.000₺", "330₺", "Multinet", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Haşim Berkay Aslıhak", "Erkek", false, true],
-    ["proj_enka_okullari_istinye_temizlik_hiz", "Enka Okulları İstinye Temizlik Hiz.", "Temizlik", "İstinye, Sarıyer", 41.113932, 29.035994, "stop_ataturk_oto_sanayi", "07:30-16:00 / 10:30-19:00", "34.000₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Kadın/Erkek", false, true],
-    ["proj_adidas_capacity", "Adidas Capacity", "Temizlik", "Ataköy, Bakırköy", 40.977701, 28.871391, "stop_bakirkoy", "09:45-11:45", "14.170₺", "-", "-", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", "Kadın", false, true],
-    ["proj_adidas_cevahir", "Adidas Cevahir", "Temizlik", "Büyükdere, Şişli", 41.062036, 28.992982, "stop_sisli", "09:45-11:45", "14.170₺", "-", "-", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", "Kadın", false, true],
-    ["proj_gap_tarlabasi", "Gap Tarlabaşı", "Temizlik", "Tarlabaşı, Beyoğlu", 41.03668, 28.980336, "stop_huseyin_aga_camii", "07.00-17.00", "29.400₺", "550₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", "Erkek", false, true],
-    ["proj_halic_universitesi_temizlik_hizmeti", "Haliç Üniversitesi Temizlik Hizmeti", "Temizlik", "5.Levent, Alibeyköy", 41.085852, 28.952187, "stop_alibeykoy", "08.30-17.30", "32.500₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Erkek", false, true],
-    ["proj_halic_universitesi_temizlik_hizmeti_2", "Haliç Üniversitesi Temizlik Hizmeti", "Temizlik", "5.Levent, Alibeyköy", 41.085852, 28.952187, "stop_alibeykoy", "08.00-17.00", "32.500₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Kadın", false, true],
-    ["proj_pamir_gida", "Pamir Gıda (Haribo) Temizlik Hizm.", "Temizlik", "Ömerli, Arnavutköy", 41.124429, 28.633433, "stop_tasoluk", "07:00-15:00 / 15:00-23:00 / 23:00-07:00", "42.500₺", "Yemekhane", "Servis", "Projeye yönlendirilecek — Operasyon: Rıdvan Altuntaş / İK: Ahmet Berat İmamoğlu", "Erkek", false, true],
-    ["proj_bilgili_holding", "Bilgili Holding / Akaretler Beşiktaş", "Temizlik", "Akaretler, Beşiktaş", 41.043146, 29.002455, "stop_besiktas_iskele", "07.00-15.00 / 13.00-21.00", "34.900₺", "8.690₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Ece Uğurlu", "Erkek", false, true],
-    ["proj_aras_kargo_ikitelli", "Aras Kargo İkitelli", "Temizlik", "İkitelli, Başakşehir", 41.095215, 28.80037, "stop_siteler", "08.00-17.30", "35.000₺", "8.300₺", "3.628₺", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true],
-    ["proj_metro_properties_beylikduzu_avm_tem_hiz", "Metro Properties - Beylikdüzü AVM Tem. Hiz.", "Temizlik", "Çelebi Mehmet Cd. (E5 Yan Yol), Esenyurt", 41.009287, 28.660097, "stop_halkali", "08:00-15:00 / 15:00-22:00", "28.000₺", "10.000₺", "3.567₺ Multinet", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true],
+    ["proj_bezmialem_hastanesi", "Bezmialem Hastanesi Vatan Temizlik Hizmeti", "Temizlik", "Topkapı, Fatih", 41.0188294, 28.9350771, "stop_emniyet_fatih", "07.30-17.30", "28.000₺", "Yemekhane", "Servis", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Mustfa Kerem As", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_calik_holding", "Çalık Holding Temizlik Hizmeti", "Temizlik", "Esentepe, Zincirlikuyu", 41.0711609, 29.015096, "stop_gayrettepe", "08.00-17.30", "29.000₺", "550₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_havas_istanbul_havalimani", "Havaş İstanbul Havalimanı Temizlik Hizmeti", "Temizlik", "Tayakadın, Arnavutköy", 41.2761476, 28.7287349, "stop_istanbul_havalimani", "08.00-17.00/16.00-24.00", "34.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Ahmet Berat İmamoğlu", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_haribo", "Haribo", "Temizlik", "Ömerli, Arnavutköy", 41.1244293, 28.6334334, "stop_kayasehir", "08:00-17:00/16:00-24:00", "34.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_kuzey_marmara_santiye", "Kuzey Marmara Şantiye Temizlik Hizmeti", "Temizlik", "Sazlıdere, Başakşehir", 41.1059147, 28.718574, "stop_toplu_konutlar", "08:00-17:00", "30.000₺", "Yemekhane", "Servis", "Telefon görüşmesi — Operasyon: Kemal Çalış / İK: Ahmet Berat İmamoğlu", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_kadir_has_universitesi", "Kadir Has Üniversitesi Cibali Ana Kampüs Temizlik Hizmeti", "Temizlik", "Cibali, Fatih", 41.0249511, 28.9589739, "stop_cibali", "07:00-16:00/07:00-17:00", "30.000₺", "330₺", "Multinet", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Haşim Berkay Aslıhak", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_enka_okullari", "Enka Okulları İstinye Temizlik Hizmeti", "Temizlik", "İstinye, Sarıyer", 41.1139318, 29.0359938, "stop_ataturk_oto_sanayi", "07:30-16:00/10:30-19:00", "34.000₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_adidas_capacity", "Adidas Capacity", "Temizlik", "Ataköy, Bakırköy", 40.9777011, 28.8713911, "stop_bakirkoy", "09:45-11:45", "14.170₺", "-", "-", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", "Kadın", false, true, "", "Temizlik Görevlisi"],
+    ["proj_adidas_cevahir", "Adidas Cevahir", "Temizlik", "Büyükdere, Şişli", 41.0620365, 28.9929816, "stop_sisli", "09:45-11:45", "14.170₺", "-", "-", "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", "Kadın", false, true, "", "Temizlik Görevlisi"],
+    ["proj_gap_tarlabasi", "Gap Tarlabaşı", "Temizlik", "Tarlabaşı, Beyoğlu", 41.03668, 28.9803363, "stop_huseyin_aga_camii", "07.00-17.00", "29.400₺", "550₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_halic_universitesi_bahcivan", "Haliç Üniversitesi Temizlik Hizmeti", "Temizlik", "5. Levent, Alibeyköy", 41.0858518, 28.9521866, "stop_alibeykoy_cep_otogari", "08.30-17.30", "32.500₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Erkek", false, true, "", "Bahçıvan"],
+    ["proj_halic_universitesi", "Haliç Üniversitesi Temizlik Hizmeti", "Temizlik", "5. Levent, Alibeyköy", 41.0858518, 28.9521866, "stop_alibeykoy_cep_otogari", "08.00-17.00", "32.500₺", "Yemekhane", "3.628₺", "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", "Kadın", false, true, "", "Temizlik Görevlisi"],
+    ["proj_pamir_gida_haribo", "Pamir Gıda (Haribo) Temizlik Hizmeti", "Temizlik", "Ömerli, Arnavutköy", 41.1244293, 28.6334334, "stop_kayasehir", "07:00-15:00", "42.500₺", "Yemekhane", "Servis", "Projeye yönlendirilecek — Operasyon: Rıdvan Altuntaş / İK: Ahmet Berat İmamoğlu", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_bilgili_holding_akaretler", "Bilgili Holding / Akaretler Beşiktaş", "Temizlik", "Akaretler, Beşiktaş", 41.0431457, 29.0024549, "stop_besiktas_iskele", "07.00-15.00/13.00-21.00", "34.900₺", "8.690₺", "3.628₺", "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Ece Uğurlu", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_aras_kargo_ikitelli", "Aras Kargo İkitelli", "Temizlik", "Başakşehir", 41.0952146, 28.8003704, "stop_basak_konutlari", "08.00-17.30", "35.000₺", "8.300₺", "3.628₺", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_metro_properties_beylikduzu", "Metro Properties Beylikdüzü AVM", "Temizlik", "Çelebi Mehmet Cd., Esenyurt", 41.0092874, 28.6600973, "stop_halkali", "08:00-15:00/15:00-22:00", "28.000₺", "10.000₺", "3.567₺ Multinet", "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_akbank_bankacilik_merkezi_gebze", "Akbank Bankacılık Merkezi - Gebze", "Temizlik", "Şekerpınar, Çayırova, Kocaeli", 40.860809, 29.375146, "stop_gtu_fatih", "07.00-15.00/15.00-23.00", "36.333₺", "16.900₺", "Servis", "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", "Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_sabiha_gokcen_havalimani", "Sabiha Gökçen Havalimanı", "Temizlik", "Kurtköy, Pendik", 40.918454, 29.32171, "stop_sabiha_gokcen_havalimani", "07.00-15.00/15.00-23.00/23.00-07.00", "41.773₺", "Projede", "Servis", "Projeye yönlendirilecek — İK: Ali Berk Topçakar", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_hilltown_avm", "Hilltown AVM", "Temizlik", "Aydınevler, Maltepe", 40.952614, 29.122145, "stop_kucukyali", "07.00-15.00/14.30-22.30", "38.497₺", "7.200₺", "3.300₺", "Projeye yönlendirilecek — Operasyon: Tolga Aydın / İK: Tarık Öznur", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_medicalpark_goztepe", "Medicalpark Göztepe", "Temizlik", "Göztepe, Kadıköy", 40.987753, 29.067699, "stop_goztepe", "07.00-15.00/15.00-23.00/23.00-07.00", "29.200₺", "Projede", "3.300₺ Multinet", "Projeye yönlendirilecek — Operasyon: Şirali Kılınç", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
+    ["proj_medicalpark_kocaeli", "Medicalpark Kocaeli", "Temizlik", "Başiskele, Kocaeli", 40.729671, 29.993913, "stop_gebze", "07.00-15.00/15.00-23.00/23.00-07.00", "29.200₺", "Projede", "3.000₺ Multinet", "Projeye yönlendirilecek — Operasyon: Şirali Kılınç / İK: Kerem Evcil", "Kadın", false, true, "", "Temizlik Görevlisi"],
   ];
-  // Seed satırları eski (kontenjan/pozisyon öncesi) sütun düzeninde; sondaki iki
-  // sütunu (capacity, position) burada ekliyoruz. Pozisyonlar kaynak Excel'in
-  // unvan sütunundan (TEMİZLİK ELEMANI/PERSONELİ -> Temizlik Görevlisi, BAHÇIVAN).
-  const POSITION_BY_ID = { proj_halic_universitesi_temizlik_hizmeti: "Bahçıvan" };
-  const full = rows.map((r) => r.concat(["", POSITION_BY_ID[r[0]] || "Temizlik Görevlisi"]));
-  sheet.getRange(2, 1, full.length, FIELDS.length).setValues(full);
+  sheet.getRange(2, 1, rows.length, FIELDS.length).setValues(rows);
 }
 
 function doGet(e) {
