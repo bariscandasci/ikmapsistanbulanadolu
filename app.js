@@ -13,14 +13,9 @@
 // listeyi görür ve "Proje Ekle"/"Acil"/"Aç-Kapa" değişiklikleri herkese
 // yansır. data.js'teki liste yalnızca ilk yükleme anında (Sheet'e henüz
 // ulaşılamadıysa) çevrimdışı bir yedek olarak kullanılır.
-// ⚠️ İSTANBUL İÇİN HENÜZ KURULMADI. Ankara'daki Apps Script URL'i buraya
-// KOPYALANMAMALI — o URL Ankara'nın kendi Google Sheet'ine yazıyor, aynı
-// anda İstanbul'un projelerini de oraya karıştırır. İstanbul için: Ankara'daki
-// Sheet + Apps Script'in bir kopyasını (Dosya > Kopya Oluştur) yapıp yeni bir
-// Web App olarak deploy edin, çıkan /exec URL'ini aşağıya yapıştırın. Boş
-// kaldığı sürece uygulama sessizce data.js'teki statik listeyle çalışır
-// ("Proje Ekle" ile eklenen projeler sayfa yenilenince kaybolur).
-const SHEET_API_URL = "";
+// İstanbul'un kendi Apps Script dağıtımı. Ankara'daki /exec URL'i buraya
+// yazılmamalı — o adres Ankara Sheet'ine gider.
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxWlbu0OwKM76SKoExW_1UtnLlK7fQFP4EqKSRo_3cFGn6nc6Gha7qPwTKYOeJO6r4/exec";
 const SHEET_CACHE_KEY = "ist_ulasim_sheet_cache_v1";
 
 // Sheet'e başarılı bir yazmadan hemen sonra yerel önbelleği de günceller.
