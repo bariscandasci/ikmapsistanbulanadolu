@@ -633,9 +633,14 @@ function pathToSteps(pathStopIds, edgeAtStop, graph) {
         to: toName,
         verified: line ? line.verified !== false : true,
         lineId: s._lineId,
+        fromStopId: s.fromStopId,
+        toStopId: s.toStopId,
       };
     }
-    return { mode: "hub", line: "Yürüyüş", from: fromName, to: toName, verified: true, lineId: null };
+    return {
+      mode: "hub", line: "Yürüyüş", from: fromName, to: toName, verified: true, lineId: null,
+      fromStopId: s.fromStopId, toStopId: s.toStopId,
+    };
   });
 }
 
@@ -647,10 +652,10 @@ function addAccessWalkSteps(steps, route, graph, origin, dest, originLabel, dest
   const lastWalkKm = haversineKm({ lat: lastStop.lat, lng: lastStop.lng }, dest.coords);
 
   if (lastWalkKm > WALK_STEP_MIN_KM) {
-    steps.push({ mode: "hub", line: "Yürüyüş", from: lastStop.name, to: destLabel, verified: true, lineId: null });
+    steps.push({ mode: "hub", line: "Yürüyüş", from: lastStop.name, to: destLabel, verified: true, lineId: null, fromStopId: lastStop.id });
   }
   if (firstWalkKm > WALK_STEP_MIN_KM) {
-    steps.unshift({ mode: "hub", line: "Yürüyüş", from: originLabel, to: firstStop.name, verified: true, lineId: null });
+    steps.unshift({ mode: "hub", line: "Yürüyüş", from: originLabel, to: firstStop.name, verified: true, lineId: null, toStopId: firstStop.id });
   }
   return steps;
 }
@@ -1039,16 +1044,16 @@ function loadLocalTransitNetwork() {
 }
 loadLocalTransitNetwork(); // sayfa açılışında arka planda hemen başlat
 
-// Hat geometrileri (gerçek güzergah şekilleri) ayrı, biraz daha büyük bir
-// dosyada (transit_network_geometry.json, ~1.8MB, seyreltilmiş) tutuluyor ve
+// Hat geometrileri ayrı dosyada (transit_network_geometry.json) tutuluyor ve
 // stops/lines'tan SONRA, arka planda yükleniyor — sayfa açılışını yavaşlatmasın
-// diye. Yüklendiğinde, o ana kadar çizilmiş olabilecek rotayı gerçek
-// güzergah şekliyle yeniden çizmek için mevcut aramayı tekrarlar.
+// diye. GTFS'te shapes.txt olmadığı için bunlar cadde şekli değil, her hattın
+// gerçek durak koordinatlarının durak sırasıdır. Yüklendiğinde, o ana kadar
+// çizilmiş olabilecek rotayı bu sırayla yeniden çizmek için mevcut aramayı tekrarlar.
 let localTransitGeometry = null;
 let localTransitGeometryPromise = null;
 function loadLocalTransitGeometry() {
   if (localTransitGeometryPromise) return localTransitGeometryPromise;
-  localTransitGeometryPromise = fetch("transit_network_geometry.json?v=2")
+  localTransitGeometryPromise = fetch("transit_network_geometry.json?v=3")
     .then((res) => res.json())
     .then((data) => {
       localTransitGeometry = data;
@@ -2005,10 +2010,10 @@ function interpolateCoords(a, b, t) {
 const REAL_GEOMETRY_CONNECT_LIMIT_KM = 0.15;
 
 /**
- * Rotayı, mümkün olduğunca hatların OSM'den alınan gerçek geometrisini
- * (yol/ray şeklini) takip ederek çizer. Her bacak kendi rengiyle/gerçek
- * güzergahıyla ayrı bir segment olarak çizilir; gerçek geometrisi olmayan
- * (canlı keşfedilmiş ya da TAHMİNİ) hatlar için düz kesikli çizgiye döner.
+ * Rotayı, hatların durak sırasını takip ederek çizer. Her bacak kendi
+ * rengiyle ayrı bir segmenttir. Geometrisi olmayan (tahmini) hatlar için
+ * düz kesikli çizgiye döner. Binilen parça, hattın tamamı değil, adımın
+ * biniş ve iniş durakları arasındaki durak sırasıdır.
  */
 function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   routesLayer.clearLayers();
@@ -2017,10 +2022,15 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   if (steps.length === 0) return;
 
   const lineOfStep = (s) => (s.lineId ? linesById[s.lineId] : null);
+  const stopCoord = (stopId) => {
+    if (!stopId || !transitGraph) return null;
+    const s = transitGraph.stopsById.get(stopId);
+    return s ? { lat: s.lat, lng: s.lng } : null;
+  };
   // Graf motorunun ürettiği adımlardaki otobüs lineId'leri linesById'de değil
   // (transit_network.json'ın kendi id'leri, ör. "iett_line_1") — bu yüzden
   // geometri için ayrıca transitGraph + localTransitGeometry'e de bakılır.
-  const geometryOfStep = (s) => {
+  const fullGeometryOfStep = (s) => {
     const line = lineOfStep(s);
     if (line && line.geometry && line.geometry.length > 1) return line.geometry;
     if (s.lineId && transitGraph && transitGraph.linesByLocalId.has(s.lineId)) {
@@ -2033,18 +2043,37 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     }
     return null;
   };
+  const geometryOfStep = (s) => {
+    const full = fullGeometryOfStep(s);
+    if (!full) return null;
+    const a = stopCoord(s.fromStopId);
+    const b = stopCoord(s.toStopId);
+    if (!a || !b) return full;
+    const i1 = nearestPointIndex(full, a);
+    const i2 = nearestPointIndex(full, b);
+    const seg = full.slice(Math.min(i1, i2), Math.max(i1, i2) + 1);
+    return seg.length > 1 ? seg : full;
+  };
 
-  // Her bacağın başlangıç/bitiş "çapa" koordinatını belirle: ardışık iki
-  // hattın geometrisi varsa, gerçek aktarma noktası bu iki hattın birbirine
-  // en yakın olduğu nokta olarak hesaplanır.
+  // Her bacağın başlangıç/bitiş çapasını gerçek biniş/iniş durağından al.
+  // Durak kimliği yoksa (tahmini hat) iki geometrinin en yakın noktasına,
+  // o da yoksa uçlar arasına düz oranla düşülür.
   const anchors = [originCoords];
   for (let i = 0; i < steps.length - 1; i++) {
-    const gA = geometryOfStep(steps[i]);
-    const gB = geometryOfStep(steps[i + 1]);
-    if (gA && gB) {
-      anchors.push(nearestPairBetweenGeometries(gA, gB));
+    const endOfPrev = stopCoord(steps[i].toStopId);
+    const startOfNext = stopCoord(steps[i + 1].fromStopId);
+    if (endOfPrev && startOfNext) {
+      anchors.push({
+        lat: (endOfPrev.lat + startOfNext.lat) / 2,
+        lng: (endOfPrev.lng + startOfNext.lng) / 2,
+      });
+    } else if (endOfPrev || startOfNext) {
+      anchors.push(endOfPrev || startOfNext);
     } else {
-      anchors.push(interpolateCoords(originCoords, destCoords, (i + 1) / steps.length));
+      const gA = geometryOfStep(steps[i]);
+      const gB = geometryOfStep(steps[i + 1]);
+      if (gA && gB) anchors.push(nearestPairBetweenGeometries(gA, gB));
+      else anchors.push(interpolateCoords(originCoords, destCoords, (i + 1) / steps.length));
     }
   }
   anchors.push(destCoords);

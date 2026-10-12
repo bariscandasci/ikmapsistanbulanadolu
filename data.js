@@ -24,15 +24,18 @@
  * verisinden (İBB Açık Veri Portalı, data.ibb.gov.tr/dataset/iett-gtfs-verisi,
  * 21.04.2026 tarihli, indirilme 2026-09-07) 1486 gerçek otobüs hattı ve 13.183
  * gerçek durak eklendi — bkz. proje kökündeki transit_network.json. Bu hatlar
- * ana rota motoruna (resolveTransfer/BFS) DAHİL DEĞİL, sadece adres aramasında
- * "yakında hangi otobüsler geçiyor" bilgisini (discoverNearbyTransitLocal)
- * besliyor. Kapsam notu: GTFS feed'inde her hat numarası+yön için BİRDEN FAZLA
+ * ana rota motoruna (app.js buildRoutingNetwork / Dijkstra) DAHİL: raylı
+ * sistemle birlikte süre hesabında kullanılıyor. Adres aramasındaki
+ * "yakında hangi otobüsler geçiyor" listesi de aynı dosyadan geliyor.
+ * Kapsam notu: GTFS feed'inde her hat numarası+yön için BİRDEN FAZLA
  * program-varyantı (gün/saat bazlı küçük güzergah farkları) var; her biri için
  * TEK bir temsili varyant (mevcutsa en düşük varyant numaralı, "ana" örüntü)
  * seçildi — 2128 hat+yön kombinasyonundan 642'sinin GTFS'te hiç aktif seferi
  * yoktu (muhtemelen iptal/mevsimlik), bu yüzden 1486 hatla sonuçlandı.
- * transit_network_geometry.json boş kaldı — bu GTFS feed'i shapes.txt (gerçek
- * güzergah şekli) içermiyor; haritada rotalar düz/kesikli çizgiyle çizilir.
+ * transit_network_geometry.json cadde şekli değil: GTFS feed'inde shapes.txt
+ * yok. Dosya, her hattın gerçek durak koordinatlarını durak sırasıyla
+ * birleştirir. Haritadaki çizgi bu durakları izler; iki durak arası düz
+ * parçadır, hattın tamamı tek bir düz çizgi değildir.
  *
  * Şema, Ankara'daki (ANKARA_DATA) ile birebir aynıdır — bkz. o dosyanın
  * başındaki şema açıklaması.
@@ -377,12 +380,11 @@ const ISTANBUL_DATA = {
   // KAPSAM: M1A, M1B, M2, M3, M4, M5, M6, M7, M8, M9, M11 metro hatları;
   // T1-T5 tramvay hatları (T3 Kadıköy-Moda nostaljik tramvay dahil); F1-F4
   // füniküler hatları; Marmaray (Gebze-Halkalı). Bu dizideki hatlar ana rota
-  // motoru (resolveTransfer/BFS) tarafından kullanılır. OTOBÜS/METROBÜS
-  // hatları BURADA DEĞİL — onlar proje kökündeki transit_network.json'da
-  // (İETT resmi GTFS verisi, 1486 hat/13.183 durak — bkz. o dosyanın/
-  // yukarıdaki dosya başlığının notu) ve sadece adres aramasında "yakında
-  // hangi otobüsler geçiyor" bilgisini besliyor (bkz. app.js
-  // discoverNearbyTransitLocal), ana rota hesabına dahil değil.
+  // motoruna (Dijkstra) girer. OTOBÜS/METROBÜS hatları BURADA DEĞİL — onlar
+  // proje kökündeki transit_network.json'da (İETT resmi GTFS verisi, 1486
+  // hat/13.183 durak) ve buildRoutingNetwork ile aynı grafa eklenir; süre
+  // hesabına dahildir. Adres aramasındaki "yakında hangi otobüsler geçiyor"
+  // listesi de bu dosyadan gelir (bkz. app.js discoverNearbyTransitLocal).
   //
   // ATLANAN/HARİÇ TUTULAN VERİ (uydurmamak için):
   // - "Darıca Sahil–Gebze OSB" ve "(Gebze–Sabiha Gökçen Havalimanı) Hattı":
