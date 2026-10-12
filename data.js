@@ -9,10 +9,9 @@
  * Bu, Ankara modülünün (ikmaps-main) İstanbul için İSKELET/altyapı sürümüdür.
  * Aşağıdakiler henüz GERÇEK ŞİRKET VERİSİ DEĞİL, yer tutucudur:
  *
- *   1. projects[] — "ÖRNEK" ön ekli birkaç kurgusal proje. Gerçek Tepe
- *      Destek İstanbul proje portföyü (adres, koordinat, vardiya, maaş,
- *      yemek, servis, referans) İK'dan alınıp bu diziye işlenmeli — bkz.
- *      Ankara'daki ikmaps-main/data.js'in projects[] alanı örnek format için.
+ *   1. projects[] — "Proje Bilgileri (1) İST ANADOLU.xlsx" Temizlik
+ *      sayfasındaki 21 gerçek proje. Alan formatı Ankara'daki
+ *      ikmaps-main/data.js projects[] ile aynıdır.
  *   2. districts[] — İstanbul'un 39 ilçesinden 16'sı (8 Avrupa + 8 Anadolu
  *      yakası) ve her birinden 2 mahalle seçildi; koordinatlar ilçe/mahalle
  *      merkezine yakın kabaca değerlerdir (proje pini hassasiyeti değil,
@@ -332,24 +331,41 @@ const ISTANBUL_DATA = {
   // hafta günceller.
   urgentProjectIds: [],
 
-  // Gerçek Tepe Destek proje verisi — 2026-09-22 tarihinde İK'dan gelen
-  // "Proje Bilgileri (1) İST ANADOLU.xlsx" (Temizlik sayfası, satır 18-22)
-  // işlendi. Bu dosyanın 2-17. satırları ikmaps-istanbul'daki (Avrupa yakası)
-  // 16 projeyle birebir aynıydı, o yüzden buraya kopyalanmadı — burada sadece
-  // dosyaya yeni eklenen 5 proje var. Konum sütununda maps linki değil düz
-  // adres metni vardı; koordinatlar Nominatim/OSM ile adres bazlı çözüldü
-  // (maps.app.goo.gl linki yoktu). accessStopId en yakın transitStops
-  // girdisiyle eşleştirildi. Akbank Gebze ve Medicalpark Kocaeli projeleri
-  // İstanbul sınırları dışında (Kocaeli) — kullanıcı bunları Anadolu yakası
-  // uygulamasına dahil etmek istedi. Medicalpark Kocaeli en yakın raylı
-  // istasyona (Gebze) ~65 km — bu projenin ana rota motorunda kapsam dışı
-  // ("doğrulanamadı") çıkması beklenir, transit_network.json (İETT GTFS) da
-  // Kocaeli'yi kapsamıyor.
+  // Gerçek Tepe Destek proje verisi — "Proje Bilgileri (1) İST ANADOLU.xlsx"
+  // Temizlik sayfası, satır 2-22. Liste bu sayfadaki 21 projedir; dosyadaki
+  // Güvenlik sayfası (Bodrum/Marmaris/Ankara) ve Kod ve Ücretleri sayfası
+  // (Ankara ücret kodları) iş ilanı listesi olmadığı için alınmadı.
+  // Konum sütunundaki maps.app.goo.gl linkleri açılıp yerin !3d/!4d
+  // koordinatı kullanıldı. Kuzey Marmara şantiyesinin konum hücresi "-"
+  // olduğu için Sazlıdere Barajı, Başakşehir Nominatim ile çözüldü.
+  // Satır 18-22 (Gebze, Sabiha Gökçen, Hilltown, Medicalpark Göztepe,
+  // Medicalpark Kocaeli) düz adres metnidir; koordinatları önceki
+  // Nominatim çözümünden duruyor. accessStopId, transitStops içindeki
+  // en yakın raylı duraktır. Akbank Gebze ve Medicalpark Kocaeli İstanbul
+  // dışındadır. Medicalpark Kocaeli en yakın istasyona (Gebze) ~49 km —
+  // ana rota motorunda kapsam dışı çıkması beklenir. Haribo/Ömerli (~11 km,
+  // Kayaşehir) ve Marmara Park (~9 km, Halkalı) da raylı sisteme uzaktır.
   projects: [
+    { id: "proj_bezmialem_hastanesi", name: "Bezmialem Hastanesi Vatan Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Topkapı, Fatih", lat: 41.0188294, lng: 28.9350771, accessStopId: "stop_emniyet_fatih", shift: "07.30-17.30", salary: "28.000₺", meal: "Yemekhane", transport: "Servis", referral: "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Mustfa Kerem As", gender: "Kadın/Erkek" },
+    { id: "proj_calik_holding", name: "Çalık Holding Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Esentepe, Zincirlikuyu", lat: 41.0711609, lng: 29.015096, accessStopId: "stop_gayrettepe", shift: "08.00-17.30", salary: "29.000₺", meal: "550₺", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", gender: "Erkek" },
+    { id: "proj_havas_istanbul_havalimani", name: "Havaş İstanbul Havalimanı Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Tayakadın, Arnavutköy", lat: 41.2761476, lng: 28.7287349, accessStopId: "stop_istanbul_havalimani", shift: "08.00-17.00/16.00-24.00", salary: "34.000₺", meal: "Yemekhane", transport: "Servis", referral: "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Ahmet Berat İmamoğlu", gender: "Erkek" },
+    { id: "proj_haribo", name: "Haribo", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Ömerli, Arnavutköy", lat: 41.1244293, lng: 28.6334334, accessStopId: "stop_kayasehir", shift: "08:00-17:00/16:00-24:00", salary: "34.000₺", meal: "Yemekhane", transport: "Servis", referral: "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", gender: "Erkek" },
+    { id: "proj_kuzey_marmara_santiye", name: "Kuzey Marmara Şantiye Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Sazlıdere, Başakşehir", lat: 41.1059147, lng: 28.7185740, accessStopId: "stop_toplu_konutlar", shift: "08:00-17:00", salary: "30.000₺", meal: "Yemekhane", transport: "Servis", referral: "Telefon görüşmesi — Operasyon: Kemal Çalış / İK: Ahmet Berat İmamoğlu", gender: "Erkek" },
+    { id: "proj_kadir_has_universitesi", name: "Kadir Has Üniversitesi Cibali Ana Kampüs Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Cibali, Fatih", lat: 41.0249511, lng: 28.9589739, accessStopId: "stop_cibali", shift: "07:00-16:00/07:00-17:00", salary: "30.000₺", meal: "330₺", transport: "Multinet", referral: "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Haşim Berkay Aslıhak", gender: "Erkek" },
+    { id: "proj_enka_okullari", name: "Enka Okulları İstinye Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "İstinye, Sarıyer", lat: 41.1139318, lng: 29.0359938, accessStopId: "stop_ataturk_oto_sanayi", shift: "07:30-16:00/10:30-19:00", salary: "34.000₺", meal: "Yemekhane", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", gender: "Kadın/Erkek" },
+    { id: "proj_adidas_capacity", name: "Adidas Capacity", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Ataköy, Bakırköy", lat: 40.9777011, lng: 28.8713911, accessStopId: "stop_bakirkoy", shift: "09:45-11:45", salary: "14.170₺", meal: "-", transport: "-", referral: "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", gender: "Kadın" },
+    { id: "proj_adidas_cevahir", name: "Adidas Cevahir", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Büyükdere, Şişli", lat: 41.0620365, lng: 28.9929816, accessStopId: "stop_sisli", shift: "09:45-11:45", salary: "14.170₺", meal: "-", transport: "-", referral: "Telefon görüşmesi — Operasyon: Feridun Aksu / İK: Aybars Zeki", gender: "Kadın" },
+    { id: "proj_gap_tarlabasi", name: "Gap Tarlabaşı", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Tarlabaşı, Beyoğlu", lat: 41.03668, lng: 28.9803363, accessStopId: "stop_huseyin_aga_camii", shift: "07.00-17.00", salary: "29.400₺", meal: "550₺", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Haşim Berkay Aslıhak", gender: "Erkek" },
+    { id: "proj_halic_universitesi_bahcivan", name: "Haliç Üniversitesi Temizlik Hizmeti", sector: "Temizlik", position: "Bahçıvan", address: "5. Levent, Alibeyköy", lat: 41.0858518, lng: 28.9521866, accessStopId: "stop_alibeykoy_cep_otogari", shift: "08.30-17.30", salary: "32.500₺", meal: "Yemekhane", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", gender: "Erkek" },
+    { id: "proj_halic_universitesi", name: "Haliç Üniversitesi Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "5. Levent, Alibeyköy", lat: 41.0858518, lng: 28.9521866, accessStopId: "stop_alibeykoy_cep_otogari", shift: "08.00-17.00", salary: "32.500₺", meal: "Yemekhane", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Kemal Çalış / İK: Ece Uğurlu", gender: "Kadın" },
+    { id: "proj_pamir_gida_haribo", name: "Pamir Gıda (Haribo) Temizlik Hizmeti", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Ömerli, Arnavutköy", lat: 41.1244293, lng: 28.6334334, accessStopId: "stop_kayasehir", shift: "07:00-15:00", salary: "42.500₺", meal: "Yemekhane", transport: "Servis", referral: "Projeye yönlendirilecek — Operasyon: Rıdvan Altuntaş / İK: Ahmet Berat İmamoğlu", gender: "Erkek" },
+    { id: "proj_bilgili_holding_akaretler", name: "Bilgili Holding / Akaretler Beşiktaş", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Akaretler, Beşiktaş", lat: 41.0431457, lng: 29.0024549, accessStopId: "stop_besiktas_iskele", shift: "07.00-15.00/13.00-21.00", salary: "34.900₺", meal: "8.690₺", transport: "3.628₺", referral: "Projeye yönlendirilecek — Operasyon: Feridun Aksu / İK: Ece Uğurlu", gender: "Erkek" },
+    { id: "proj_aras_kargo_ikitelli", name: "Aras Kargo İkitelli", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Başakşehir", lat: 41.0952146, lng: 28.8003704, accessStopId: "stop_basak_konutlari", shift: "08.00-17.30", salary: "35.000₺", meal: "8.300₺", transport: "3.628₺", referral: "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", gender: "Erkek" },
+    { id: "proj_metro_properties_beylikduzu", name: "Metro Properties Beylikdüzü AVM", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Çelebi Mehmet Cd., Esenyurt", lat: 41.0092874, lng: 28.6600973, accessStopId: "stop_halkali", shift: "08:00-15:00/15:00-22:00", salary: "28.000₺", meal: "10.000₺", transport: "3.567₺ Multinet", referral: "Telefon görüşmesi — Operasyon: Rıdvan Altuntaş / İK: Ali Remzi Adar", gender: "Erkek" },
+    { id: "proj_akbank_bankacilik_merkezi_gebze", name: "Akbank Bankacılık Merkezi - Gebze", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Şekerpınar, Çayırova, Kocaeli", lat: 40.860809, lng: 29.375146, accessStopId: "stop_gtu_fatih", shift: "07.00-15.00/15.00-23.00", salary: "36.333₺", meal: "16.900₺", transport: "Servis", referral: "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", gender: "Erkek" },
     { id: "proj_sabiha_gokcen_havalimani", name: "Sabiha Gökçen Havalimanı", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Kurtköy, Pendik", lat: 40.918454, lng: 29.321710, accessStopId: "stop_sabiha_gokcen_havalimani", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "41.773₺", meal: "Projede", transport: "Servis", referral: "Projeye yönlendirilecek — İK: Ali Berk Topçakar", gender: "Kadın/Erkek" },
     { id: "proj_hilltown_avm", name: "Hilltown AVM", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Aydınevler, Maltepe", lat: 40.952614, lng: 29.122145, accessStopId: "stop_kucukyali", shift: "07.00-15.00/14.30-22.30", salary: "38.497₺", meal: "7.200₺", transport: "3.300₺", referral: "Projeye yönlendirilecek — Operasyon: Tolga Aydın / İK: Tarık Öznur", gender: "Kadın/Erkek" },
     { id: "proj_medicalpark_goztepe", name: "Medicalpark Göztepe", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Göztepe, Kadıköy", lat: 40.987753, lng: 29.067699, accessStopId: "stop_goztepe", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.300₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç", gender: "Kadın/Erkek" },
-    { id: "proj_akbank_bankacilik_merkezi_gebze", name: "Akbank Bankacılık Merkezi - Gebze", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Şekerpınar, Çayırova, Kocaeli", lat: 40.860809, lng: 29.375146, accessStopId: "stop_gtu_fatih", shift: "07.00-15.00/15.00-23.00", salary: "36.333₺", meal: "16.900₺", transport: "Servis", referral: "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", gender: "Erkek" },
     { id: "proj_medicalpark_kocaeli", name: "Medicalpark Kocaeli", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Başiskele, Kocaeli", lat: 40.729671, lng: 29.993913, accessStopId: "stop_gebze", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.000₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç / İK: Kerem Evcil", gender: "Kadın" },
   ],
 
