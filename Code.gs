@@ -71,6 +71,137 @@ function getCommentsSheet_() {
   return sheet;
 }
 
+// Aday havuzu — "Adaylar" sekmesi. id telefon bazlıdır (cand_5xxxxxxxxx).
+// Dizi alanlar (sektör, sertifika, kaynaklar) hücrede JSON metni olarak durur.
+const CANDIDATES_SHEET_NAME = "Adaylar";
+const CANDIDATE_FIELDS = [
+  "id", "fullName", "phone", "phoneRaw", "addressText",
+  "districtId", "neighborhoodId", "lat", "lng", "coordsSource",
+  "age", "gender", "sectorExperience", "certificates",
+  "source", "appliedAt", "uploadedAt", "mergedSources",
+];
+
+function getCandidatesSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CANDIDATES_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CANDIDATES_SHEET_NAME);
+    sheet.appendRow(CANDIDATE_FIELDS);
+  }
+  return sheet;
+}
+
+function cellText_(value) {
+  if (value == null || value === "") return "";
+  if (Object.prototype.toString.call(value) === "[object Date]") return value.toISOString();
+  return String(value);
+}
+
+function parseJsonList_(raw) {
+  if (raw == null || raw === "") return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  const text = cellText_(raw).trim();
+  if (!text) return [];
+  if (text.charAt(0) === "[") {
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  return text.split(/[,/;]/).map(function (part) { return part.trim(); }).filter(Boolean);
+}
+
+function candidateToRow_(candidate) {
+  const coords = candidate.coords || {};
+  return CANDIDATE_FIELDS.map(function (field) {
+    if (field === "lat") return coords.lat == null || coords.lat === "" ? "" : Number(coords.lat);
+    if (field === "lng") return coords.lng == null || coords.lng === "" ? "" : Number(coords.lng);
+    if (field === "age") return candidate.age == null || candidate.age === "" ? "" : Number(candidate.age);
+    if (field === "sectorExperience" || field === "certificates" || field === "mergedSources") {
+      return JSON.stringify(candidate[field] || []);
+    }
+    const value = candidate[field];
+    return value == null ? "" : String(value);
+  });
+}
+
+function rowToCandidate_(header, row) {
+  const raw = {};
+  header.forEach(function (key, i) { raw[key] = row[i]; });
+  const lat = raw.lat === "" || raw.lat == null ? null : Number(raw.lat);
+  const lng = raw.lng === "" || raw.lng == null ? null : Number(raw.lng);
+  const age = raw.age === "" || raw.age == null ? null : Number(raw.age);
+  return {
+    id: cellText_(raw.id),
+    fullName: cellText_(raw.fullName),
+    phone: cellText_(raw.phone),
+    phoneRaw: cellText_(raw.phoneRaw),
+    addressText: cellText_(raw.addressText),
+    districtId: cellText_(raw.districtId) || null,
+    neighborhoodId: cellText_(raw.neighborhoodId) || null,
+    coords: lat != null && lng != null && !isNaN(lat) && !isNaN(lng) ? { lat: lat, lng: lng } : null,
+    coordsSource: cellText_(raw.coordsSource) || null,
+    age: age != null && !isNaN(age) ? age : null,
+    gender: cellText_(raw.gender) || null,
+    sectorExperience: parseJsonList_(raw.sectorExperience),
+    certificates: parseJsonList_(raw.certificates),
+    source: cellText_(raw.source),
+    appliedAt: cellText_(raw.appliedAt) || null,
+    uploadedAt: cellText_(raw.uploadedAt) || null,
+    retentionUntil: null,
+    mergedSources: parseJsonList_(raw.mergedSources),
+  };
+}
+
+function readAllCandidates_() {
+  const sheet = getCandidatesSheet_();
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const header = values[0].map(function (h) { return String(h).trim(); });
+  const idCol = header.indexOf("id");
+  return values.slice(1)
+    .filter(function (row) { return idCol !== -1 && row[idCol]; })
+    .map(function (row) { return rowToCandidate_(header, row); });
+}
+
+function upsertCandidates_(candidates) {
+  const sheet = getCandidatesSheet_();
+  const lastRow = sheet.getLastRow();
+  const idToRow = {};
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function (r, i) {
+      if (r[0]) idToRow[String(r[0])] = i + 2;
+    });
+  }
+  const append = [];
+  let updated = 0;
+  (candidates || []).forEach(function (candidate) {
+    if (!candidate || !candidate.id) return;
+    const row = candidateToRow_(candidate);
+    const existing = idToRow[String(candidate.id)];
+    if (existing > 0) {
+      sheet.getRange(existing, 1, 1, CANDIDATE_FIELDS.length).setValues([row]);
+      updated++;
+    } else {
+      append.push(row);
+      idToRow[String(candidate.id)] = -1;
+    }
+  });
+  if (append.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, append.length, CANDIDATE_FIELDS.length).setValues(append);
+  }
+  return { updated: updated, added: append.length };
+}
+
+function clearCandidates_() {
+  const sheet = getCandidatesSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  return { cleared: Math.max(lastRow - 1, 0) };
+}
+
 function readAllComments_() {
   const sheet = getCommentsSheet_();
   const values = sheet.getDataRange().getValues();
@@ -162,7 +293,8 @@ function doGet(e) {
   ensureLaterAddedColumns_();
   const projects = readAllRows_();
   const comments = readAllComments_();
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, projects, comments }))
+  const candidates = readAllCandidates_();
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, projects, comments, candidates }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -285,6 +417,14 @@ function doPost(e) {
     // hatalı/test amaçlı girilmiş bir yorumu temizlemek için). createdAt her
     // yorumda benzersiz olduğundan (appendRow anında üretilir) bu ikili tek
     // bir satırı işaret etmeye yeter.
+    if (action === "upsertCandidates") {
+      return jsonOk_(upsertCandidates_(body.candidates || []));
+    }
+
+    if (action === "clearCandidates") {
+      return jsonOk_(clearCandidates_());
+    }
+
     if (action === "removeComment") {
       const target = body.comment || {};
       if (!target.candidateId || !target.createdAt) return jsonError_("candidateId ve createdAt zorunlu");

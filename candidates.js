@@ -6,12 +6,10 @@
  * app.js'in gerçek graf tabanlı rota motorunu (getTransitEstimate) olduğu
  * gibi kullanır — mesafe/süre hesaplaması burada TEKRAR YAZILMAZ.
  *
- * DEPOLAMA: Şu an yalnızca localStorage (CandidateStore) kullanılıyor — proje
- * verisindeki gibi (Google Sheets) ekip genelinde paylaşımlı DEĞİL, sadece bu
- * tarayıcıda kalıcı. Paylaşımlı hale getirmek istenirse CandidateStore'un
- * _load/_save/upsertBatch metodları bir Apps Script Web App'ine (projelerdeki
- * postToSheet/postBatchUpdate deseniyle aynı) bağlanacak şekilde değiştirilir;
- * geri kalan tüm mantık (dedup, skorlama, UI) aynı kalır.
+ * DEPOLAMA: Adaylar Google Sheet'teki "Adaylar" sekmesinde durur (projelerle
+ * aynı SHEET_API_URL). localStorage yalnızca o sekme gelene kadar ve çevrimdışı
+ * yedek olarak kullanılır. Sheet'te olmayan yerel kayıtlar ilk açılışta
+ * Sheet'e gönderilir.
  */
 
 // ---------------------------------------------------------------------------
@@ -103,6 +101,14 @@ const CandidateStore = {
   /** resolveCandidateCoords tarafından yeni çözülen konumları diske yazmak için. */
   save() {
     this._save();
+    const dirty = (this._mem || []).filter((c) => c && c._sheetDirty);
+    dirty.forEach((c) => { delete c._sheetDirty; });
+    if (dirty.length) return pushCandidatesToSheet(dirty);
+    return Promise.resolve();
+  },
+  replaceAll(list) {
+    this._mem = list || [];
+    this._save();
   },
   /** newOnes: buildCandidateFromRow() çıktısı dizisi. Dönüş: {added, merged}. */
   upsertBatch(newOnes) {
@@ -122,13 +128,56 @@ const CandidateStore = {
     });
     this._mem = Array.from(byId.values());
     this._save();
-    return { added, merged };
+    const changed = newOnes.map((c) => byId.get(c.id)).filter(Boolean);
+    return { added, merged, changed };
   },
   clear() {
     this._mem = [];
     this._save();
   },
 };
+
+/** Aday dizisini Sheet'e yazar. Eski bir dağıtım bu action'ı tanımazsa hata fırlatır. */
+async function pushCandidatesToSheet(candidates) {
+  if (typeof SHEET_API_URL === "undefined" || !SHEET_API_URL || !candidates.length) return;
+  const size = 80;
+  for (let i = 0; i < candidates.length; i += size) {
+    await postToSheet({ action: "upsertCandidates", candidates: candidates.slice(i, i + size) });
+  }
+}
+
+async function clearCandidatesOnSheet() {
+  if (typeof SHEET_API_URL === "undefined" || !SHEET_API_URL) return;
+  await postToSheet({ action: "clearCandidates" });
+}
+
+/**
+ * Sayfa açılışında Sheet'teki adayları alır. Bu tarayıcıda olup Sheet'te
+ * olmayan kayıtlar kaybolmasın diye Sheet'e eklenir. Sheet listesi asıl
+ * listedir.
+ */
+async function loadSharedCandidates() {
+  if (typeof SHEET_API_URL === "undefined" || !SHEET_API_URL) return;
+  try {
+    const res = await fetch(SHEET_API_URL);
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.candidates)) return;
+    const local = CandidateStore.all();
+    const byId = new Map(data.candidates.filter((c) => c && c.id).map((c) => [c.id, c]));
+    const extras = [];
+    local.forEach((c) => {
+      if (c && c.id && !byId.has(c.id)) {
+        byId.set(c.id, c);
+        extras.push(c);
+      }
+    });
+    CandidateStore.replaceAll(Array.from(byId.values()));
+    if (typeof refreshCandidatePoolCount === "function") refreshCandidatePoolCount();
+    if (extras.length) await pushCandidatesToSheet(extras);
+  } catch {
+    /* Sheet okunamadı — bu tarayıcıdaki yedek listeyle devam */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 2) EXCEL PARSE + SÜTUN EŞLEME
@@ -351,6 +400,7 @@ async function resolveCandidateCoords(candidate) {
     candidate.neighborhoodId = match.neighborhoodId;
     candidate.coords = match.coords;
     candidate.coordsSource = "ilce-eslesme";
+    candidate._sheetDirty = true;
     candidateCoordsDirty = true;
     return candidate.coords;
   }
@@ -359,6 +409,7 @@ async function resolveCandidateCoords(candidate) {
     if (geo) {
       candidate.coords = { lat: geo.lat, lng: geo.lng };
       candidate.coordsSource = "geocode";
+      candidate._sheetDirty = true;
       candidateCoordsDirty = true;
       return candidate.coords;
     }
@@ -1011,11 +1062,16 @@ uploadCandidatesModal.addEventListener("click", (e) => {
   if (e.target === uploadCandidatesModal) closeUploadCandidatesModal();
 });
 
-candidateClearAllBtn.addEventListener("click", () => {
+candidateClearAllBtn.addEventListener("click", async () => {
   if (!CandidateStore.all().length) return;
   if (!confirm(`${CandidateStore.all().length} adayın tamamı silinsin mi? Bu işlem geri alınamaz.`)) return;
   CandidateStore.clear();
   refreshCandidatePoolCount();
+  try {
+    await clearCandidatesOnSheet();
+  } catch (err) {
+    alert("Adaylar bu tarayıcıdan silindi ama Sheet güncellenemedi — " + (err && err.message ? err.message : ""));
+  }
   if (currentMode === "project-to-candidates" && projectSelect.value) runSearch();
 });
 
@@ -1107,7 +1163,7 @@ candidateAiMapBtn.addEventListener("click", async () => {
   }
 });
 
-candidateImportBtn.addEventListener("click", () => {
+candidateImportBtn.addEventListener("click", async () => {
   if (!pendingImport) return;
   const selects = candidateMappingRows.querySelectorAll(".candidate-map-select");
   const mapping = {};
@@ -1124,16 +1180,27 @@ candidateImportBtn.addEventListener("click", () => {
   const parsed = pendingImport.rows.map((row) => buildCandidateFromRow(row, mapping, now)).filter((c) => c.phone);
   const skipped = pendingImport.rows.length - parsed.length;
 
-  const { added, merged } = CandidateStore.upsertBatch(parsed);
+  const { added, merged, changed } = CandidateStore.upsertBatch(parsed);
   refreshCandidatePoolCount();
+  let sheetNote = "";
+  try {
+    candidateUploadStatus.textContent = "Sheet'e yazılıyor…";
+    await pushCandidatesToSheet(changed);
+    sheetNote = " Sheet'e kaydedildi.";
+  } catch (err) {
+    sheetNote = " Bu tarayıcıya yazıldı ama Sheet'e kaydedilemedi: " + (err && err.message ? err.message : "");
+  }
   resetImportState();
   candidateUploadStatus.textContent =
     `${added} yeni aday eklendi, ${merged} aday mevcut kayıtla tekilleştirildi (birleştirildi).` +
     (skipped > 0 ? ` ${skipped} satır telefon numarası olmadığı için atlandı.` : "") +
-    ` Toplam ${CandidateStore.all().length} aday.`;
+    ` Toplam ${CandidateStore.all().length} aday.` +
+    sheetNote;
 
   if (currentMode === "project-to-candidates" && projectSelect.value) runSearch();
 });
+
+loadSharedCandidates();
 
 // ---------------------------------------------------------------------------
 // 7) ADAY YORUMLARI — ekip içi paylaşımlı notlar (Google Apps Script + Sheet)
