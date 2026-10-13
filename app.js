@@ -16,7 +16,7 @@
 // İstanbul'un kendi Apps Script dağıtımı. Ankara'daki /exec URL'i buraya
 // yazılmamalı — o adres Ankara Sheet'ine gider.
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxWlbu0OwKM76SKoExW_1UtnLlK7fQFP4EqKSRo_3cFGn6nc6Gha7qPwTKYOeJO6r4/exec";
-const SHEET_CACHE_KEY = "ist_ulasim_sheet_cache_v1";
+const SHEET_CACHE_KEY = "ist_ulasim_sheet_cache_v2"; // v2: Avrupa yakası projeleri çıkarıldı
 
 // Sheet'e başarılı bir yazmadan hemen sonra yerel önbelleği de günceller.
 // Bunu atlarsak, kullanıcı bir projeyi aç/kapat edip kaydettikten sonra
