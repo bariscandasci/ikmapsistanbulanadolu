@@ -75,8 +75,10 @@ def publish():
         if source.exists():
             shutil.copy2(source, DIST / name)
     assets = ROOT / "assets"
-    if assets.exists():
-        shutil.copytree(assets, DIST / "assets")
+    logo = assets / "tepe-logo.png"
+    if not logo.exists():
+        sys.exit("Tepe logosu yok: assets/tepe-logo.png")
+    shutil.copytree(assets, DIST / "assets")
 
 
 def main():
