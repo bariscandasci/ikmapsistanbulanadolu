@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Vercel derlemesi. Proje adına veya argümana göre .env.<bölge> uygular
-ve tarayıcı dosyalarını dist/ altına koyar.
+ve tarayıcı dosyalarını dist/ altına koyar. Argüman ve bilinen proje adı
+yoksa repodaki hazır config.js korunur.
 
   python scripts/vercel_build.py .env.ankara-servis
   VERCEL_PROJECT_NAME=ankaras python scripts/vercel_build.py
+  python scripts/vercel_build.py
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ STATIC_FILES = [
     "tenant.js",
     "candidates.js",
     "data.js",
+    "live_bus.js",
     "transit_network.json",
     "transit_network_geometry.json",
     "dolmus_lines.json",
@@ -60,12 +63,7 @@ def choose_env():
     for key, filename in PROJECT_ENV.items():
         if name.startswith(key):
             return ROOT / filename
-    known = ", ".join(PROJECT_ENV)
-    sys.exit(
-        "Site env dosyası seçilemedi. Build komutuna dosyayı verin "
-        f"(ör. python3 scripts/vercel_build.py .env.ankara-servis) "
-        f"veya VERCEL_PROJECT_NAME şunlardan biri olsun: {known}"
-    )
+    return None
 
 
 def publish():
@@ -83,6 +81,16 @@ def publish():
 
 def main():
     env_file = choose_env()
+    if env_file is None:
+        config = ROOT / "config.js"
+        if not config.exists():
+            sys.exit("config.js yok ve site env dosyası seçilemedi.")
+        before = config.read_bytes()
+        publish()
+        if config.read_bytes() != before:
+            sys.exit("config.js derleme sırasında değişti.")
+        print("dist hazır: mevcut config.js korundu")
+        return
     if not env_file.exists():
         sys.exit(f"Env dosyası yok: {env_file}")
     subprocess.check_call([sys.executable, str(APPLY), str(env_file)])
