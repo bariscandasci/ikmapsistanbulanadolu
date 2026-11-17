@@ -1,19 +1,9 @@
 /**
- * İstanbul Ulaşım & Proje Eşleştirme Modülü — paylaşımlı proje veritabanı + aday yorumları + AI.
- * Ankara'daki (ikmaps) Code.gs'in İSTANBUL İÇİN AYRI bir kopyası — kendi
- * Google Sheet'ine yazar, Ankara'nınkine dokunmaz.
- *
- * Kurulum: bu dosyayı, İstanbul için oluşturulan (Ankara'dan bağımsız) yeni
- * bir Google Sheet'te Uzantılar > Apps Script menüsünden açılan editöre
- * YAPIŞTIR, "seedIfEmpty" fonksiyonunu bir kez çalıştır (Anadolu yakası
- * ve Kocaeli projelerini yazar),
- * sonra Dağıt > Yeni dağıtım > Web uygulaması (Yürütme: Ben, Erişim: Herkes)
- * ile yayınla. Çıkan /exec URL'ini app.js içindeki SHEET_API_URL'e yapıştır
- * (aday yorumları ve AI de aynı URL'i kullanır). Ankara'daki Apps Script
- * URL'i buraya yapıştırılmamalı.
- * AI özellikleri için ayrıca Script Özellikleri'ne GEMINI_API_KEY ekle
- * (bkz. callGemini_). Sonraki kod güncellemelerinde "Dağıtımları yönet" ile
- * mevcut dağıtımın YENİ SÜRÜMÜNÜ yayınla (URL değişmez).
+ * İK Ulaşım & Proje Eşleştirme Modülü — paylaşımlı proje veritabanı + aday yorumları.
+ * Bu dosyayı, "Projeler" (ve "Comments") sayfalarını içeren Google Sheet'te
+ * Uzantılar > Apps Script menüsünden açılan editöre YAPIŞTIR,
+ * sonra "Dağıt > Dağıtımları yönet" ile mevcut dağıtımın YENİ SÜRÜMÜNÜ yayınla
+ * (URL değişmez, sadece kod güncellenir).
  */
 
 const SHEET_NAME = "Projeler";
@@ -50,15 +40,8 @@ function ensureLaterAddedColumns_() {
 const COMMENTS_SHEET_NAME = "Comments";
 const COMMENT_FIELDS = ["candidateId", "candidateName", "author", "text", "createdAt"];
 
-/** "Projeler" sekmesi yoksa (ör. ilk kurulum) başlık satırıyla birlikte oluşturur. */
 function getSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(FIELDS);
-  }
-  return sheet;
+  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
 }
 
 /** "Comments" sekmesi yoksa (ör. ilk kurulum) başlık satırıyla birlikte oluşturur. */
@@ -70,137 +53,6 @@ function getCommentsSheet_() {
     sheet.appendRow(COMMENT_FIELDS);
   }
   return sheet;
-}
-
-// Aday havuzu — "Adaylar" sekmesi. id telefon bazlıdır (cand_5xxxxxxxxx).
-// Dizi alanlar (sektör, sertifika, kaynaklar) hücrede JSON metni olarak durur.
-const CANDIDATES_SHEET_NAME = "Adaylar";
-const CANDIDATE_FIELDS = [
-  "id", "fullName", "phone", "phoneRaw", "addressText",
-  "districtId", "neighborhoodId", "lat", "lng", "coordsSource",
-  "age", "gender", "sectorExperience", "certificates",
-  "source", "appliedAt", "uploadedAt", "mergedSources",
-];
-
-function getCandidatesSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(CANDIDATES_SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(CANDIDATES_SHEET_NAME);
-    sheet.appendRow(CANDIDATE_FIELDS);
-  }
-  return sheet;
-}
-
-function cellText_(value) {
-  if (value == null || value === "") return "";
-  if (Object.prototype.toString.call(value) === "[object Date]") return value.toISOString();
-  return String(value);
-}
-
-function parseJsonList_(raw) {
-  if (raw == null || raw === "") return [];
-  if (Array.isArray(raw)) return raw.map(String);
-  const text = cellText_(raw).trim();
-  if (!text) return [];
-  if (text.charAt(0) === "[") {
-    try {
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch (err) {
-      return [];
-    }
-  }
-  return text.split(/[,/;]/).map(function (part) { return part.trim(); }).filter(Boolean);
-}
-
-function candidateToRow_(candidate) {
-  const coords = candidate.coords || {};
-  return CANDIDATE_FIELDS.map(function (field) {
-    if (field === "lat") return coords.lat == null || coords.lat === "" ? "" : Number(coords.lat);
-    if (field === "lng") return coords.lng == null || coords.lng === "" ? "" : Number(coords.lng);
-    if (field === "age") return candidate.age == null || candidate.age === "" ? "" : Number(candidate.age);
-    if (field === "sectorExperience" || field === "certificates" || field === "mergedSources") {
-      return JSON.stringify(candidate[field] || []);
-    }
-    const value = candidate[field];
-    return value == null ? "" : String(value);
-  });
-}
-
-function rowToCandidate_(header, row) {
-  const raw = {};
-  header.forEach(function (key, i) { raw[key] = row[i]; });
-  const lat = raw.lat === "" || raw.lat == null ? null : Number(raw.lat);
-  const lng = raw.lng === "" || raw.lng == null ? null : Number(raw.lng);
-  const age = raw.age === "" || raw.age == null ? null : Number(raw.age);
-  return {
-    id: cellText_(raw.id),
-    fullName: cellText_(raw.fullName),
-    phone: cellText_(raw.phone),
-    phoneRaw: cellText_(raw.phoneRaw),
-    addressText: cellText_(raw.addressText),
-    districtId: cellText_(raw.districtId) || null,
-    neighborhoodId: cellText_(raw.neighborhoodId) || null,
-    coords: lat != null && lng != null && !isNaN(lat) && !isNaN(lng) ? { lat: lat, lng: lng } : null,
-    coordsSource: cellText_(raw.coordsSource) || null,
-    age: age != null && !isNaN(age) ? age : null,
-    gender: cellText_(raw.gender) || null,
-    sectorExperience: parseJsonList_(raw.sectorExperience),
-    certificates: parseJsonList_(raw.certificates),
-    source: cellText_(raw.source),
-    appliedAt: cellText_(raw.appliedAt) || null,
-    uploadedAt: cellText_(raw.uploadedAt) || null,
-    retentionUntil: null,
-    mergedSources: parseJsonList_(raw.mergedSources),
-  };
-}
-
-function readAllCandidates_() {
-  const sheet = getCandidatesSheet_();
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return [];
-  const header = values[0].map(function (h) { return String(h).trim(); });
-  const idCol = header.indexOf("id");
-  return values.slice(1)
-    .filter(function (row) { return idCol !== -1 && row[idCol]; })
-    .map(function (row) { return rowToCandidate_(header, row); });
-}
-
-function upsertCandidates_(candidates) {
-  const sheet = getCandidatesSheet_();
-  const lastRow = sheet.getLastRow();
-  const idToRow = {};
-  if (lastRow >= 2) {
-    sheet.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function (r, i) {
-      if (r[0]) idToRow[String(r[0])] = i + 2;
-    });
-  }
-  const append = [];
-  let updated = 0;
-  (candidates || []).forEach(function (candidate) {
-    if (!candidate || !candidate.id) return;
-    const row = candidateToRow_(candidate);
-    const existing = idToRow[String(candidate.id)];
-    if (existing > 0) {
-      sheet.getRange(existing, 1, 1, CANDIDATE_FIELDS.length).setValues([row]);
-      updated++;
-    } else {
-      append.push(row);
-      idToRow[String(candidate.id)] = -1;
-    }
-  });
-  if (append.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, append.length, CANDIDATE_FIELDS.length).setValues(append);
-  }
-  return { updated: updated, added: append.length };
-}
-
-function clearCandidates_() {
-  const sheet = getCandidatesSheet_();
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
-  return { cleared: Math.max(lastRow - 1, 0) };
 }
 
 function readAllComments_() {
@@ -254,33 +106,11 @@ function findRowIndexById_(id) {
   return -1;
 }
 
-/**
- * Tek seferlik kurulum yardımcısı: "Projeler" sekmesi tamamen boşsa (henüz
- * hiç satır eklenmemişse) data.js'teki Anadolu yakası ve Kocaeli
- * projelerini Sheet'e yazar.
- * Apps Script editöründe Çalıştır menüsünden manuel tetiklenir. Sheet'te
- * zaten veri varsa hiçbir şey yapmadan çıkar — güvenle tekrar çalıştırılabilir.
- * Sütun sırası FIELDS ile aynıdır; sondaki iki değer capacity ve position.
- */
-function seedIfEmpty() {
-  const sheet = getSheet_();
-  if (sheet.getLastRow() > 1) return; // zaten veri var, dokunma
-  const rows = [
-    ["proj_akbank_bankacilik_merkezi_gebze", "Akbank Bankacılık Merkezi - Gebze", "Temizlik", "Şekerpınar, Çayırova, Kocaeli", 40.860809, 29.375146, "stop_gtu_fatih", "07.00-15.00/15.00-23.00", "36.333₺", "16.900₺", "Servis", "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", "Erkek", false, true, "", "Temizlik Görevlisi"],
-    ["proj_sabiha_gokcen_havalimani", "Sabiha Gökçen Havalimanı", "Temizlik", "Kurtköy, Pendik", 40.918454, 29.32171, "stop_sabiha_gokcen_havalimani", "07.00-15.00/15.00-23.00/23.00-07.00", "41.773₺", "Projede", "Servis", "Projeye yönlendirilecek — İK: Ali Berk Topçakar", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
-    ["proj_hilltown_avm", "Hilltown AVM", "Temizlik", "Aydınevler, Maltepe", 40.952614, 29.122145, "stop_kucukyali", "07.00-15.00/14.30-22.30", "38.497₺", "7.200₺", "3.300₺", "Projeye yönlendirilecek — Operasyon: Tolga Aydın / İK: Tarık Öznur", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
-    ["proj_medicalpark_goztepe", "Medicalpark Göztepe", "Temizlik", "Göztepe, Kadıköy", 40.987753, 29.067699, "stop_goztepe", "07.00-15.00/15.00-23.00/23.00-07.00", "29.200₺", "Projede", "3.300₺ Multinet", "Projeye yönlendirilecek — Operasyon: Şirali Kılınç", "Kadın/Erkek", false, true, "", "Temizlik Görevlisi"],
-    ["proj_medicalpark_kocaeli", "Medicalpark Kocaeli", "Temizlik", "Başiskele, Kocaeli", 40.729671, 29.993913, "stop_gebze", "07.00-15.00/15.00-23.00/23.00-07.00", "29.200₺", "Projede", "3.000₺ Multinet", "Projeye yönlendirilecek — Operasyon: Şirali Kılınç / İK: Kerem Evcil", "Kadın", false, true, "", "Temizlik Görevlisi"],
-  ];
-  sheet.getRange(2, 1, rows.length, FIELDS.length).setValues(rows);
-}
-
 function doGet(e) {
   ensureLaterAddedColumns_();
   const projects = readAllRows_();
   const comments = readAllComments_();
-  const candidates = readAllCandidates_();
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, projects, comments, candidates }))
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, projects, comments }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -403,14 +233,6 @@ function doPost(e) {
     // hatalı/test amaçlı girilmiş bir yorumu temizlemek için). createdAt her
     // yorumda benzersiz olduğundan (appendRow anında üretilir) bu ikili tek
     // bir satırı işaret etmeye yeter.
-    if (action === "upsertCandidates") {
-      return jsonOk_(upsertCandidates_(body.candidates || []));
-    }
-
-    if (action === "clearCandidates") {
-      return jsonOk_(clearCandidates_());
-    }
-
     if (action === "removeComment") {
       const target = body.comment || {};
       if (!target.candidateId || !target.createdAt) return jsonError_("candidateId ve createdAt zorunlu");

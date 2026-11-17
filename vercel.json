@@ -1,0 +1,6 @@
+{
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "python3 scripts/vercel_build.py",
+  "outputDirectory": "dist"
+}

@@ -1,824 +1,344 @@
 /**
- * ISTANBUL_DATA — Ulaşım & Proje Eşleştirme Modülü veri modeli (İstanbul).
+ * ANKARA_DATA — Ulaşım & Proje Eşleştirme Modülü veri modeli.
  *
  * Bu dosya classic <script> olarak yüklenir (ES module DEĞİL) ki index.html
  * dosya sisteminden (file://) çift tıklanarak da açılabilsin.
  *
- * DURUM (İSKELET AŞAMASI — güncelleme: 2026-09-07)
- * -------------------------------------------------
- * Bu, Ankara modülünün (ikmaps-main) İstanbul için İSKELET/altyapı sürümüdür.
- * Aşağıdakiler henüz GERÇEK ŞİRKET VERİSİ DEĞİL, yer tutucudur:
+ * VERİ KAYNAĞI (ÖNEMLİ)
+ * ----------------------
+ * transitLines[] içindeki M1-M4, A1 Ankaray ve Başkentray hatları ile
+ * EGO_261_6 / EGO_105_1 otobüs hatları OpenStreetMap / Overpass API'den
+ * (14 Ağustos 2026 tarihinde) çekilen GERÇEK EGO/Ankara Metrosu rota
+ * verilerine dayanır: gerçek hat adları (ör. "261-6: Kasalar-Bakanlık"),
+ * gerçek durak sıraları ve gerçek operatör bilgisi (EGO Genel Müdürlüğü,
+ * TCDD Taşımacılık). `verified: true` olan hatlar bu şekilde doğrulanmıştır.
  *
- *   1. projects[] — Anadolu yakası ve Kocaeli'deki 5 gerçek proje
- *      (Gebze, Pendik, Maltepe, Kadıköy, Başiskele). Avrupa yakası
- *      projeleri listede yok. Alan formatı Ankara'daki
- *      ikmaps-main/data.js projects[] ile aynıdır.
- *   2. districts[] — İstanbul'un 39 ilçesinden 16'sı (8 Avrupa + 8 Anadolu
- *      yakası) ve her birinden 2 mahalle seçildi; koordinatlar ilçe/mahalle
- *      merkezine yakın kabaca değerlerdir (proje pini hassasiyeti değil,
- *      "adayın bulunduğu bölge" seçimi için yeterli). Kapsam genişletilebilir.
+ * `verified: false` olan TEK hat Pursaklar için kullanılan tahmini hattır —
+ * OSM'de bu ilçeye ait, hub'a (Kızılay/Ulus) doğrudan bağlanan, isimle
+ * doğrulanabilir bir EGO hattı bulunamadı. Arayüzde bu hat "TAHMİNİ" rozetiyle
+ * ayrıca işaretlenir; İK bu bilgiyi adaya kesin diye SÖYLEMEMELİDİR.
  *
- * transitStops[] / transitLines[] / hubStopIds[] (raylı sistem — metro/tramvay/
- * Marmaray/füniküler) OpenStreetMap/Overpass API'den GERÇEK istasyon adı ve
- * sırasıyla çekildi (bkz. ilgili blok başındaki kaynak notu). Bunun ÜSTÜNE,
- * Ankara'daki transit_network.json'ın muadili olarak İETT'nin RESMİ GTFS
- * verisinden (İBB Açık Veri Portalı, data.ibb.gov.tr/dataset/iett-gtfs-verisi,
- * 21.04.2026 tarihli, indirilme 2026-09-07) 1486 gerçek otobüs hattı ve 13.183
- * gerçek durak eklendi — bkz. proje kökündeki transit_network.json. Bu hatlar
- * ana rota motoruna (app.js buildRoutingNetwork / Dijkstra) DAHİL: raylı
- * sistemle birlikte süre hesabında kullanılıyor. Adres aramasındaki
- * "yakında hangi otobüsler geçiyor" listesi de aynı dosyadan geliyor.
- * Kapsam notu: GTFS feed'inde her hat numarası+yön için BİRDEN FAZLA
- * program-varyantı (gün/saat bazlı küçük güzergah farkları) var; her biri için
- * TEK bir temsili varyant (mevcutsa en düşük varyant numaralı, "ana" örüntü)
- * seçildi — 2128 hat+yön kombinasyonundan 642'sinin GTFS'te hiç aktif seferi
- * yoktu (muhtemelen iptal/mevsimlik), bu yüzden 1486 hatla sonuçlandı.
- * transit_network_geometry.json cadde şekli değil: GTFS feed'inde shapes.txt
- * yok. Dosya, her hattın gerçek durak koordinatlarını durak sırasıyla
- * birleştirir. Haritadaki çizgi bu durakları izler; iki durak arası düz
- * parçadır, hattın tamamı tek bir düz çizgi değildir.
+ * Koordinatlar yine de yaklaşıktır (durak/istasyonların tam pin konumu için
+ * hâlâ gerçek geocoding/GTFS shape verisi gerekir) — ama hat isimleri, durak
+ * adları ve hangi hattın hangi hub'dan geçtiği artık gerçek veriye dayanıyor.
  *
- * Şema, Ankara'daki (ANKARA_DATA) ile birebir aynıdır — bkz. o dosyanın
- * başındaki şema açıklaması.
+ * ŞEMA
+ * ----
+ * districts[]:     { id, name, lat, lng, accessStopId, neighborhoods: [{id, name, lat, lng, accessStopId?}] }
+ * projects[]:       { id, name, sector, address, lat, lng, accessStopId, shift, salary, meal, transport }
+ * transitStops[]:   { id, name, mode }
+ * transitLines[]:   { id, name, mode, verified, source, stopIds: string[] }
+ * hubStopIds[]:     gerçek aktarma merkezleri (Kızılay, Batıkent, Ankara Gar)
+ *
+ * transitMatrix sabit bir tablo olarak SAKLANMAZ. app.js içindeki
+ * estimateTransit() mesafe + gerçek hat/hub ilişkisi kullanarak anlık
+ * hesaplar ve sonucu localStorage tabanlı "ilçe bazlı cache" katmanında
+ * saklar (bkz. app.js -> TransitCache). Gerçek süre/sefer bilgisi için bu
+ * fonksiyonun içi Google Maps Directions (mode=transit) API çağrısıyla
+ * değiştirilebilir; hat/durak modeli ve cache katmanı aynen kalır.
  */
 
-const ISTANBUL_DATA = {
+const ANKARA_DATA = {
   districts: [
-    // --- AVRUPA YAKASI ---
     {
-      id: "besiktas", name: "Beşiktaş", lat: 41.0422, lng: 29.0060, accessStopId: "stop_kabatas",
+      id: "kecioren", name: "Keçiören", lat: 39.9930, lng: 32.8720, accessStopId: "stop_kecioren_belediye",
       neighborhoods: [
-        { id: "besiktas_levent", name: "Levent", lat: 41.0815, lng: 29.0119, accessStopId: "stop_levent" },
-        { id: "besiktas_etiler", name: "Etiler", lat: 41.0789, lng: 29.0339, accessStopId: "stop_etiler" },
+        { id: "kecioren_etlik", name: "Etlik", lat: 39.9800, lng: 32.8284, accessStopId: "stop_etlik" },
+        { id: "kecioren_aktepe", name: "Aktepe", lat: 39.9850, lng: 32.8550, accessStopId: "stop_kecioren_belediye" },
       ],
     },
     {
-      id: "sisli", name: "Şişli", lat: 41.0602, lng: 28.9877, accessStopId: "stop_sisli",
+      id: "cankaya", name: "Çankaya", lat: 39.9179, lng: 32.8627, accessStopId: "stop_kizilay",
       neighborhoods: [
-        { id: "sisli_mecidiyekoy", name: "Mecidiyeköy", lat: 41.0670, lng: 28.9950, accessStopId: "stop_mecidiyekoy" },
-        { id: "sisli_nisantasi", name: "Nişantaşı", lat: 41.0480, lng: 28.9940, accessStopId: "stop_osmanbey" },
+        { id: "cankaya_bahcelievler", name: "Bahçelievler", lat: 39.9198, lng: 32.8390, accessStopId: "stop_bahcelievler" },
+        { id: "cankaya_cayyolu", name: "Çayyolu", lat: 39.8814, lng: 32.7276, accessStopId: "stop_cayyolu" },
       ],
     },
     {
-      id: "bakirkoy", name: "Bakırköy", lat: 40.9819, lng: 28.8772, accessStopId: "stop_bakirkoy",
+      id: "yenimahalle", name: "Yenimahalle", lat: 39.9678, lng: 32.8130, accessStopId: "stop_yenimahalle",
       neighborhoods: [
-        { id: "bakirkoy_yesilkoy", name: "Yeşilköy", lat: 40.9686, lng: 28.8250, accessStopId: "stop_yesilkoy" },
-        { id: "bakirkoy_florya", name: "Florya", lat: 40.9760, lng: 28.7930, accessStopId: "stop_florya" },
+        { id: "yenimahalle_demetevler", name: "Demetevler", lat: 39.9770, lng: 32.8280, accessStopId: "stop_demetevler" },
+        { id: "yenimahalle_batikent", name: "Batıkent", lat: 39.9847, lng: 32.7328, accessStopId: "stop_batikent" },
       ],
     },
     {
-      id: "bagcilar", name: "Bağcılar", lat: 41.0390, lng: 28.8560, accessStopId: "stop_bagcilar_meydan",
+      id: "etimesgut", name: "Etimesgut", lat: 39.9500, lng: 32.6700, accessStopId: "stop_etimesgut",
       neighborhoods: [
-        { id: "bagcilar_merkez", name: "Bağcılar Merkez", lat: 41.0390, lng: 28.8560, accessStopId: "stop_kirazli" },
-        { id: "bagcilar_gunesli", name: "Güneşli", lat: 41.0620, lng: 28.8390, accessStopId: "stop_kirazli" },
-      ],
-    },
-    // Not: Esenyurt, çekilen gerçek raylı sistem verisinde henüz doğrudan
-    // kapsanmıyor (M1B'nin gerçek OSM'deki ucu Kirazlı) — en yakın gerçek
-    // aktarma noktası (Kirazlı) kullanıldı, bu bir YAKLAŞIKLIKTIR.
-    {
-      id: "esenyurt", name: "Esenyurt", lat: 41.0350, lng: 28.6770, accessStopId: "stop_kirazli",
-      neighborhoods: [
-        { id: "esenyurt_merkez", name: "Esenyurt Merkez", lat: 41.0350, lng: 28.6770, accessStopId: "stop_kirazli" },
-        { id: "esenyurt_pinar", name: "Pınar", lat: 41.0270, lng: 28.6690, accessStopId: "stop_kirazli" },
+        { id: "etimesgut_eryaman", name: "Eryaman", lat: 39.9614, lng: 32.6280, accessStopId: "stop_eryaman_m3" },
+        { id: "etimesgut_elvankent", name: "Elvankent", lat: 39.9770, lng: 32.6600, accessStopId: "stop_elvankent" },
       ],
     },
     {
-      id: "kucukcekmece", name: "Küçükçekmece", lat: 41.0000, lng: 28.7750, accessStopId: "stop_kucukcekmece",
+      id: "sincan", name: "Sincan", lat: 39.9680, lng: 32.5750, accessStopId: "stop_sincan",
       neighborhoods: [
-        { id: "kucukcekmece_halkali", name: "Halkalı", lat: 41.0230, lng: 28.7810, accessStopId: "stop_halkali" },
-        { id: "kucukcekmece_sefakoy", name: "Sefaköy", lat: 40.9910, lng: 28.7940, accessStopId: "stop_yesilyurt" },
+        { id: "sincan_merkez", name: "Sincan Merkez", lat: 39.9650, lng: 32.5800, accessStopId: "stop_sincan" },
+        { id: "sincan_fatih", name: "Fatih", lat: 39.9600, lng: 32.5850, accessStopId: "stop_fatih_m3" },
       ],
     },
     {
-      id: "basaksehir", name: "Başakşehir", lat: 41.0930, lng: 28.8010, accessStopId: "stop_sehir_hastanesi",
+      id: "mamak", name: "Mamak", lat: 39.9300, lng: 32.9200, accessStopId: "stop_mamak_baskentray",
       neighborhoods: [
-        { id: "basaksehir_merkez", name: "Başakşehir Merkez", lat: 41.0930, lng: 28.8010, accessStopId: "stop_sehir_hastanesi" },
-        { id: "basaksehir_sultangazi_sinir", name: "Onurkent", lat: 41.0890, lng: 28.7930, accessStopId: "stop_onurkent" },
+        { id: "mamak_akdere", name: "Akdere", lat: 39.9250, lng: 32.9350, accessStopId: "stop_mamak_baskentray" },
+        { id: "mamak_karsiyaka", name: "Karşıyaka", lat: 39.9450, lng: 32.9100, accessStopId: "stop_mamak_baskentray" },
       ],
     },
     {
-      id: "fatih", name: "Fatih", lat: 41.0190, lng: 28.9490, accessStopId: "stop_aksaray",
+      id: "altindag", name: "Altındağ", lat: 39.9500, lng: 32.8650, accessStopId: "stop_ulus",
       neighborhoods: [
-        { id: "fatih_aksaray", name: "Aksaray", lat: 41.0110, lng: 28.9540, accessStopId: "stop_aksaray" },
-        { id: "fatih_yenikapi", name: "Yenikapı", lat: 41.0010, lng: 28.9500, accessStopId: "stop_yenikapi" },
-      ],
-    },
-
-    // --- ANADOLU YAKASI ---
-    {
-      id: "kadikoy", name: "Kadıköy", lat: 40.9906, lng: 29.0274, accessStopId: "stop_kadikoy",
-      neighborhoods: [
-        { id: "kadikoy_bostanci", name: "Bostancı", lat: 40.9600, lng: 29.0940, accessStopId: "stop_bostanci" },
-        { id: "kadikoy_fenerbahce", name: "Fenerbahçe", lat: 40.9760, lng: 29.0400, accessStopId: "stop_bahariye" },
+        { id: "altindag_ulus", name: "Ulus", lat: 39.9440, lng: 32.8570, accessStopId: "stop_ulus" },
+        { id: "altindag_hisar", name: "Hisar", lat: 39.9450, lng: 32.8620, accessStopId: "stop_ulus" },
       ],
     },
     {
-      id: "uskudar", name: "Üsküdar", lat: 41.0226, lng: 29.0150, accessStopId: "stop_uskudar",
+      id: "golbasi", name: "Gölbaşı", lat: 39.7900, lng: 32.8100, accessStopId: "stop_golbasi",
       neighborhoods: [
-        { id: "uskudar_altunizade", name: "Altunizade", lat: 41.0180, lng: 29.0570, accessStopId: "stop_altunizade" },
-        { id: "uskudar_umraniye_sinir", name: "Bulgurlu", lat: 41.0170, lng: 29.0630, accessStopId: "stop_bulgurlu" },
+        { id: "golbasi_merkez", name: "Gölbaşı Merkez", lat: 39.7920, lng: 32.8080, accessStopId: "stop_golbasi" },
       ],
     },
     {
-      id: "umraniye", name: "Ümraniye", lat: 41.0160, lng: 29.1240, accessStopId: "stop_umraniye",
+      id: "pursaklar", name: "Pursaklar", lat: 40.0355, lng: 32.9040, accessStopId: "stop_pursaklar_est",
       neighborhoods: [
-        { id: "umraniye_merkez", name: "Ümraniye Merkez", lat: 41.0160, lng: 29.1240, accessStopId: "stop_umraniye" },
-        { id: "umraniye_carsi", name: "Çarşı", lat: 41.0230, lng: 29.0940, accessStopId: "stop_carsi_2" },
-      ],
-    },
-    {
-      id: "atasehir", name: "Ataşehir", lat: 40.9920, lng: 29.1270, accessStopId: "stop_kozyatagi",
-      neighborhoods: [
-        { id: "atasehir_merkez", name: "Ataşehir Merkez", lat: 40.9920, lng: 29.1270, accessStopId: "stop_kozyatagi" },
-        { id: "atasehir_icerenkoy", name: "İçerenköy", lat: 40.9760, lng: 29.1200, accessStopId: "stop_icerenkoy" },
-      ],
-    },
-    {
-      id: "maltepe", name: "Maltepe", lat: 40.9350, lng: 29.1560, accessStopId: "stop_maltepe",
-      neighborhoods: [
-        { id: "maltepe_merkez", name: "Maltepe Merkez", lat: 40.9350, lng: 29.1560, accessStopId: "stop_maltepe" },
-        { id: "maltepe_gulsuyu", name: "Gülsuyu", lat: 40.9280, lng: 29.1350, accessStopId: "stop_gulsuyu" },
-      ],
-    },
-    {
-      id: "kartal", name: "Kartal", lat: 40.9060, lng: 29.1900, accessStopId: "stop_kartal",
-      neighborhoods: [
-        { id: "kartal_merkez", name: "Kartal Merkez", lat: 40.9060, lng: 29.1900, accessStopId: "stop_kartal" },
-        { id: "kartal_soganlik", name: "Soğanlık", lat: 40.9100, lng: 29.1700, accessStopId: "stop_soganlik" },
-      ],
-    },
-    {
-      id: "pendik", name: "Pendik", lat: 40.8770, lng: 29.2340, accessStopId: "stop_pendik",
-      neighborhoods: [
-        { id: "pendik_merkez", name: "Pendik Merkez", lat: 40.8770, lng: 29.2340, accessStopId: "stop_pendik" },
-        { id: "pendik_kurtkoy", name: "Kurtköy", lat: 40.9040, lng: 29.3170, accessStopId: "stop_kurtkoy" },
-      ],
-    },
-    {
-      id: "sancaktepe", name: "Sancaktepe", lat: 41.0000, lng: 29.2330, accessStopId: "stop_sancaktepe",
-      neighborhoods: [
-        { id: "sancaktepe_merkez", name: "Sancaktepe Merkez", lat: 41.0000, lng: 29.2330, accessStopId: "stop_sancaktepe" },
-      ],
-    },
-
-    // --- KALAN İLÇELER (39 ilçenin tamamı için) — 2026-09-07 eklendi ---
-    // Çoğu, adıyla birebir örtüşen veya çok yakın gerçek bir raylı/vapur
-    // durağına bağlandı (ör. Bayrampaşa->stop_bayrampasa_maltepe,
-    // Esenler->stop_esenler). Raylı/vapur ağından ÇOK uzak kalan ilçeler
-    // (Beykoz, Avcılar, Beylikdüzü, Büyükçekmece, Çatalca, Silivri, Şile)
-    // için en yakın GERÇEK İETT otobüs durağı (transit_network.json'dan,
-    // isim+mesafeyle bulundu) kullanıldı — bu duraklar gerçek otobüs
-    // hatlarıyla ağın geri kalanına bağlı olduğu doğrulandı (BFS testi),
-    // ama rayla doğrudan bağlantıları olmadığından süre tahminleri bu
-    // ilçeler için daha kaba olacaktır.
-
-    // Avrupa yakası
-    {
-      id: "zeytinburnu", name: "Zeytinburnu", lat: 40.9950, lng: 28.9020, accessStopId: "stop_zeytinburnu",
-      neighborhoods: [
-        { id: "zeytinburnu_kazlicesme", name: "Kazlıçeşme", lat: 40.9927, lng: 28.9170, accessStopId: "stop_kazlicesme" },
-      ],
-    },
-    {
-      id: "eyupsultan", name: "Eyüpsultan", lat: 41.0480, lng: 28.9339, accessStopId: "stop_eyupsultan_teleferik",
-      neighborhoods: [
-        { id: "eyupsultan_alibeykoy", name: "Alibeyköy", lat: 41.0792, lng: 28.9496, accessStopId: "stop_alibeykoy" },
-      ],
-    },
-    {
-      id: "kagithane", name: "Kağıthane", lat: 41.0796, lng: 28.9731, accessStopId: "stop_kagithane",
-      neighborhoods: [
-        { id: "kagithane_caglayan", name: "Çağlayan", lat: 41.0708, lng: 28.9806, accessStopId: "stop_caglayan" },
-      ],
-    },
-    {
-      id: "beyoglu", name: "Beyoğlu", lat: 41.0370, lng: 28.9850, accessStopId: "stop_taksim",
-      neighborhoods: [
-        { id: "beyoglu_karakoy", name: "Karaköy", lat: 41.0222, lng: 28.9748, accessStopId: "stop_karakoy" },
-        { id: "beyoglu_cihangir", name: "Cihangir", lat: 41.0316, lng: 28.9822, accessStopId: "stop_taksim" },
-      ],
-    },
-    {
-      // Not: Sarıyer geniş bir ilçe; en yakın gerçek durak (M2'nin kuzey ucu
-      // Hacıosman) merkez/İstinye'ye birkaç km mesafede — yaklaşık kabul edildi.
-      id: "sariyer", name: "Sarıyer", lat: 41.1670, lng: 29.0570, accessStopId: "stop_haciosman",
-      neighborhoods: [
-        { id: "sariyer_maslak", name: "Maslak", lat: 41.1082, lng: 29.0209, accessStopId: "stop_itu_ayazaga" },
-        { id: "sariyer_istinye", name: "İstinye", lat: 41.1090, lng: 29.0570, accessStopId: "stop_haciosman" },
-      ],
-    },
-    {
-      id: "bayrampasa", name: "Bayrampaşa", lat: 41.0360, lng: 28.9080, accessStopId: "stop_bayrampasa_maltepe",
-      neighborhoods: [
-        { id: "bayrampasa_merkez", name: "Bayrampaşa Merkez", lat: 41.0360, lng: 28.9080, accessStopId: "stop_bayrampasa_maltepe" },
-      ],
-    },
-    {
-      id: "esenler", name: "Esenler", lat: 41.0440, lng: 28.8760, accessStopId: "stop_esenler",
-      neighborhoods: [
-        { id: "esenler_merkez", name: "Esenler Merkez", lat: 41.0440, lng: 28.8760, accessStopId: "stop_esenler" },
-      ],
-    },
-    {
-      id: "gungoren", name: "Güngören", lat: 41.0180, lng: 28.8730, accessStopId: "stop_gungoren",
-      neighborhoods: [
-        { id: "gungoren_merkez", name: "Güngören Merkez", lat: 41.0180, lng: 28.8730, accessStopId: "stop_gungoren" },
-      ],
-    },
-    {
-      id: "bahcelievler", name: "Bahçelievler", lat: 41.0000, lng: 28.8590, accessStopId: "stop_bahcelievler",
-      neighborhoods: [
-        { id: "bahcelievler_merkez", name: "Bahçelievler Merkez", lat: 41.0000, lng: 28.8590, accessStopId: "stop_bahcelievler" },
-      ],
-    },
-    {
-      // Not: en yakın gerçek durak (M7 Veysel Karani-Akşemsettin) merkeze
-      // ~2km — yaklaşık kabul edildi.
-      id: "gaziosmanpasa", name: "Gaziosmanpaşa", lat: 41.0650, lng: 28.9150, accessStopId: "stop_veysel_karani_aksemsettin",
-      neighborhoods: [
-        { id: "gaziosmanpasa_merkez", name: "Gaziosmanpaşa Merkez", lat: 41.0650, lng: 28.9150, accessStopId: "stop_veysel_karani_aksemsettin" },
-      ],
-    },
-    {
-      // "50. Yıl-Baştabya" (T4) gerçekten Sultangazi'nin 50. Yıl Mahallesi'nde.
-      id: "sultangazi", name: "Sultangazi", lat: 41.1070, lng: 28.8670, accessStopId: "stop_50_yil_bastabya",
-      neighborhoods: [
-        { id: "sultangazi_merkez", name: "Sultangazi Merkez", lat: 41.1070, lng: 28.8670, accessStopId: "stop_50_yil_bastabya" },
-      ],
-    },
-    {
-      id: "arnavutkoy", name: "Arnavutköy", lat: 41.1850, lng: 28.7400, accessStopId: "stop_arnavutkoy_hastane",
-      neighborhoods: [
-        { id: "arnavutkoy_merkez", name: "Arnavutköy Merkez", lat: 41.1850, lng: 28.7400, accessStopId: "stop_arnavutkoy_hastane" },
-      ],
-    },
-    {
-      // Raylı/vapur ağından uzak — en yakın GERÇEK İETT durağı kullanıldı
-      // (bkz. blok başındaki not).
-      id: "avcilar", name: "Avcılar", lat: 40.9800, lng: 28.7210, accessStopId: "iett_509586",
-      neighborhoods: [
-        { id: "avcilar_merkez", name: "Avcılar Merkez", lat: 40.9800, lng: 28.7210, accessStopId: "iett_509586" },
-      ],
-    },
-    {
-      id: "beylikduzu", name: "Beylikdüzü", lat: 41.0020, lng: 28.6400, accessStopId: "iett_5252405",
-      neighborhoods: [
-        { id: "beylikduzu_merkez", name: "Beylikdüzü Merkez", lat: 41.0020, lng: 28.6400, accessStopId: "iett_5252405" },
-      ],
-    },
-    {
-      id: "buyukcekmece", name: "Büyükçekmece", lat: 41.0200, lng: 28.5850, accessStopId: "iett_290569",
-      neighborhoods: [
-        { id: "buyukcekmece_merkez", name: "Büyükçekmece Merkez", lat: 41.0200, lng: 28.5850, accessStopId: "iett_290569" },
-      ],
-    },
-    {
-      id: "catalca", name: "Çatalca", lat: 41.1430, lng: 28.4610, accessStopId: "iett_284339",
-      neighborhoods: [
-        { id: "catalca_merkez", name: "Çatalca Merkez", lat: 41.1430, lng: 28.4610, accessStopId: "iett_284339" },
-      ],
-    },
-    {
-      id: "silivri", name: "Silivri", lat: 41.0730, lng: 28.2470, accessStopId: "iett_284638",
-      neighborhoods: [
-        { id: "silivri_merkez", name: "Silivri Merkez", lat: 41.0730, lng: 28.2470, accessStopId: "iett_284638" },
-      ],
-    },
-
-    // Anadolu yakası
-    {
-      id: "adalar", name: "Adalar", lat: 40.8747, lng: 29.1256, accessStopId: "stop_buyukada",
-      neighborhoods: [
-        { id: "adalar_heybeliada", name: "Heybeliada", lat: 40.8780, lng: 29.1014, accessStopId: "stop_heybeliada" },
-        { id: "adalar_burgazada", name: "Burgazada", lat: 40.8811, lng: 29.0708, accessStopId: "stop_burgazada" },
-      ],
-    },
-    {
-      // Raylı/vapur ağından uzak — en yakın GERÇEK İETT durağı kullanıldı.
-      id: "beykoz", name: "Beykoz", lat: 41.1250, lng: 29.0930, accessStopId: "iett_293015",
-      neighborhoods: [
-        { id: "beykoz_merkez", name: "Beykoz Merkez", lat: 41.1250, lng: 29.0930, accessStopId: "iett_293015" },
-      ],
-    },
-    {
-      id: "cekmekoy", name: "Çekmeköy", lat: 41.0145, lng: 29.1895, accessStopId: "stop_cekmekoy",
-      neighborhoods: [
-        { id: "cekmekoy_merkez", name: "Çekmeköy Merkez", lat: 41.0145, lng: 29.1895, accessStopId: "stop_cekmekoy" },
-      ],
-    },
-    {
-      id: "sultanbeyli", name: "Sultanbeyli", lat: 40.9659, lng: 29.2725, accessStopId: "stop_sultanbeyli",
-      neighborhoods: [
-        { id: "sultanbeyli_merkez", name: "Sultanbeyli Merkez", lat: 40.9659, lng: 29.2725, accessStopId: "stop_sultanbeyli" },
-      ],
-    },
-    {
-      // Raylı ağdan çok uzak (~20km+) — en yakın GERÇEK İETT durağı kullanıldı,
-      // ama gerçekte Şile'den şehir merkezine ulaşım büyük ölçüde özel/servis
-      // araçlarına dayanır; bu tahmin oldukça kabadır.
-      id: "sile", name: "Şile", lat: 41.1750, lng: 29.6130, accessStopId: "iett_284667",
-      neighborhoods: [
-        { id: "sile_merkez", name: "Şile Merkez", lat: 41.1750, lng: 29.6130, accessStopId: "iett_284667" },
-      ],
-    },
-    {
-      id: "tuzla", name: "Tuzla", lat: 40.8298, lng: 29.3227, accessStopId: "stop_tuzla",
-      neighborhoods: [
-        { id: "tuzla_merkez", name: "Tuzla Merkez", lat: 40.8298, lng: 29.3227, accessStopId: "stop_tuzla" },
+        { id: "pursaklar_merkez", name: "Pursaklar Merkez", lat: 40.0355, lng: 32.9040, accessStopId: "stop_pursaklar_est" },
       ],
     },
   ],
 
   // HAFTALIK ACİL PROJELER: Buraya id'sini eklediğin projeler, sonuç
-  // kartlarında kırmızı "ACİL" rozetiyle öne çıkarılır. İK bu listeyi her
-  // hafta günceller.
-  urgentProjectIds: [],
+  // kartlarında kırmızı "ACİL" rozetiyle öne çıkarılır. Her hafta bu listeyi
+  // güncellemen yeterli — id'ler aşağıdaki projects[] dizisindeki "id" alanı
+  // ile birebir aynı olmalı (ör. "proj_365_avm").
+  urgentProjectIds: [
+    "proj_bilkent_universitesi", // Bilkent Üniversitesi
+    "proj_tepe_prime", // Tepe Prime
+    "proj_rec_adliye", // REC Adliye
+    "proj_medical_park_hastane_2", // Medical Park Hastane (Keçiören)
+    "proj_vega", // Vega
+    "proj_optimum_avm", // Optimum AVM
+    "proj_panora_avm", // Panora AVM
+    "proj_duru_beytepe", // Duru Beytepe
+    "proj_medical_park_hastane", // Medical Park Hastane (Batıkent)
+  ],
 
-  // Gerçek Tepe Destek proje verisi — "Proje Bilgileri (1) İST ANADOLU.xlsx"
-  // Temizlik sayfası. Listede Anadolu yakası ve Kocaeli kalır: Gebze,
-  // Sabiha Gökçen, Hilltown, Medicalpark Göztepe, Medicalpark Kocaeli.
-  // Avrupa yakası (Fatih, Şişli, Beşiktaş, Beyoğlu, Bakırköy, Sarıyer,
-  // Başakşehir, Arnavutköy, Esenyurt, Eyüpsultan) çıkarıldı. Güvenlik
-  // sayfası ve Ankara ücret kodları alınmadı. Akbank Gebze ve Medicalpark
-  // Kocaeli İstanbul dışındadır. Medicalpark Kocaeli en yakın İETT durağına
-  // ~45 km — rota doğrulanamadı kalır.
+  // Gerçek Tepe Destek proje portföyünden (2026-08-24 tarihli iç veri) alınmıştır.
+  // Koordinatlar: Google Maps linki verilenler için doğrudan çözümlenmiş,
+  // diğerleri için OSM Nominatim ile geocode edilmiştir. shift/salary/meal/
+  // transport alanları İK'nın adaya aktarabileceği temel proje şartlarıdır;
+  // personel isim/telefon gibi kişisel iletişim bilgileri bu modülün kapsamı
+  // dışında bırakılmıştır (ulaşım eşleştirmesiyle ilgisi yoktur).
   projects: [
-    { id: "proj_akbank_bankacilik_merkezi_gebze", name: "Akbank Bankacılık Merkezi - Gebze", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Şekerpınar, Çayırova, Kocaeli", lat: 40.860809, lng: 29.375146, accessStopId: "stop_gtu_fatih", shift: "07.00-15.00/15.00-23.00", salary: "36.333₺", meal: "16.900₺", transport: "Servis", referral: "Telefon görüşmesi / banka müşteri onayı — Operasyon: Mehmet Bayraktar / İK: Kerem Evcil", gender: "Erkek" },
-    { id: "proj_sabiha_gokcen_havalimani", name: "Sabiha Gökçen Havalimanı", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Kurtköy, Pendik", lat: 40.918454, lng: 29.321710, accessStopId: "stop_sabiha_gokcen_havalimani", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "41.773₺", meal: "Projede", transport: "Servis", referral: "Projeye yönlendirilecek — İK: Ali Berk Topçakar", gender: "Kadın/Erkek" },
-    { id: "proj_hilltown_avm", name: "Hilltown AVM", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Aydınevler, Maltepe", lat: 40.952614, lng: 29.122145, accessStopId: "stop_kucukyali", shift: "07.00-15.00/14.30-22.30", salary: "38.497₺", meal: "7.200₺", transport: "3.300₺", referral: "Projeye yönlendirilecek — Operasyon: Tolga Aydın / İK: Tarık Öznur", gender: "Kadın/Erkek" },
-    { id: "proj_medicalpark_goztepe", name: "Medicalpark Göztepe", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Göztepe, Kadıköy", lat: 40.987753, lng: 29.067699, accessStopId: "stop_goztepe", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.300₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç", gender: "Kadın/Erkek" },
-    { id: "proj_medicalpark_kocaeli", name: "Medicalpark Kocaeli", sector: "Temizlik", position: "Temizlik Görevlisi", address: "Başiskele, Kocaeli", lat: 40.729671, lng: 29.993913, accessStopId: "stop_gebze", shift: "07.00-15.00/15.00-23.00/23.00-07.00", salary: "29.200₺", meal: "Projede", transport: "3.000₺ Multinet", referral: "Projeye yönlendirilecek — Operasyon: Şirali Kılınç / İK: Kerem Evcil", gender: "Kadın" },
+    { id: "proj_365_avm", name: "365 AVM", sector: "Temizlik", address: "Birlik Mahallesi, Çankaya", lat: 39.875645, lng: 32.869926, accessStopId: "stop_kizilay", shift: "8-20/10-22", salary: "28.500₺", meal: "Yemekhane", transport: "2.500₺", referral: "Ofise davet>İSG>Ahmet Tekin Proje Müdürü tel no iletilecek", gender: "Kadın/Erkek" },
+    { id: "proj_akbank", name: "Akbank", sector: "Temizlik", address: "Ostim Sanayi Sitesi, Yenimahalle", lat: 39.9677873, lng: 32.7458173, accessStopId: "stop_ostim_m1", shift: "08.00-18.00", salary: "28.000₺", meal: "12.000₺-13.000₺", transport: "-", referral: "Ofise davet>Esat Bey ile görüştürülecek", gender: "Kadın/Erkek" },
+    { id: "proj_akbank_2", name: "Akbank", sector: "Temizlik", address: "Mustafa Kemal Mahallesi, Çankaya", lat: 39.910399, lng: 32.768046, accessStopId: "stop_kizilay", shift: "08.00-18.00", salary: "28.000₺", meal: "12.000₺-13.000₺", transport: "-", referral: "Ofise davet>Esat Bey ile görüştürülecek", gender: "Kadın/Erkek" },
+    { id: "proj_akfen_holding", name: "Akfen Holding", sector: "Temizlik", address: "GOP, Çankaya", lat: 39.888583, lng: 32.872306, accessStopId: "stop_kizilay", shift: "7.00-17.00", salary: "34.292₺", meal: "Yemekhane", transport: "2.228₺", gender: "Kadın/Erkek", referral: "Serpil Akfen - 0531 819 38 26 yönlendirilecek>İSG" },
+    { id: "proj_ankara_oto", name: "Ankara Oto", sector: "Temizlik", address: "Erler, Mesa Plaza No:424, 06790 Etimesgut/Ankara", lat: 39.8928072, lng: 32.6806093, accessStopId: "stop_cayyolu", shift: "8.00-18.00", salary: "28.000₺", meal: "Yemekhane", transport: "Servis", referral: "Ofise davet>Abdurrahman Sabırsuyu>Müşteri Görüşmesi", gender: "Erkek" },
+    { id: "proj_ankara_oto_2", name: "Ankara Oto", sector: "Temizlik", address: "İskitler, Altındağ", lat: 39.947408, lng: 32.841043, accessStopId: "stop_ulus", shift: "8.00-18.00", salary: "28.000₺", meal: "Yemekhane", transport: "3.100₺", referral: "Ofise davet>Abdurrahman Sabırsuyu>Müşteri Görüşmesi", gender: "Erkek" },
+    { id: "proj_ankara_podium_avm", name: "Ankara Podium AVM", sector: "Temizlik", address: "Gimat, Yenimahalle", lat: 39.962315, lng: 32.769409, accessStopId: "stop_yenimahalle", shift: "7.30-16.30/13.30-22.00", salary: "30.000₺", meal: "Yemekhane", transport: "2.920₺", gender: "Kadın/Erkek", referral: "Anıl Kutlu Podium AVM - 0506 105 49 24>İSG" },
+    { id: "proj_baskent_emlak_konutlari", name: "Başkent Emlak Konutları", sector: "Temizlik", address: "Doğukent Bulvarı, Çankaya", lat: 39.860111, lng: 32.857771, accessStopId: "stop_kizilay", shift: "8.00-17.00", salary: "30.000₺", meal: "8.580₺", transport: "2.700₺", gender: "Kadın/Erkek" },
+    { id: "proj_bilkent_center", name: "Bilkent Center", sector: "Temizlik", address: "Bilkent Center AVM, Çankaya", lat: 39.884009, lng: 32.758607, accessStopId: "stop_bilkent", shift: "7.30-16.30/13.30-22.00", salary: "31.700₺", meal: "8.000₺", transport: "2.000₺", referral: "Ofise davet>Erdal Bey - 0544 558 16 17>İSG", gender: "Kadın/Erkek" },
+    { id: "proj_bilkent_ohm", name: "Bilkent OHM", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.907552, lng: 32.765402, accessStopId: "stop_bilkent", shift: "8.00-18.00", salary: "28.000₺", meal: "8.000₺", transport: "Servis", gender: "Kadın", referral: "Ofise davet >Eşref Bey - 0539 632 06 24>İSG" },
+    { id: "proj_bilkent_sehir_hastanesi", name: "Bilkent Şehir Hastanesi", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.900984, lng: 32.75704, accessStopId: "stop_bilkent", shift: "-", salary: "28.000₺", meal: "Yemekhane", transport: "Servis", referral: "Sağlık raporu çıkart>BŞH'ye götür", gender: "Kadın/Erkek" },
+    { id: "proj_bilkent_universitesi", name: "Bilkent Üniversitesi", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.871106, lng: 32.764288, accessStopId: "stop_bilkent", shift: "7-15 / 15-23 / 23-7", salary: "28.000₺", meal: "Yemekhane", transport: "Servis", referral: "Ofise daveti>Murat Elitok", gender: "Kadın/Erkek" },
+    { id: "proj_cyberpark", name: "Cyberpark", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.869736, lng: 32.745041, accessStopId: "stop_bilkent", shift: "8.00-18.00", salary: "30.000₺+", meal: "7.500₺", transport: "Servis", referral: "Ofisa davet>Mehmet Bey - 0549 736 90 92>İSG", gender: "Kadın/Erkek" },
+    { id: "proj_denizbank", name: "Denizbank", sector: "Temizlik", address: "Tunalı Hilmi, Çankaya", lat: 39.888848, lng: 32.854832, accessStopId: "stop_kizilay", shift: "8.00-18.00", salary: "-", meal: "-", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey ile görüştürülecek" },
+    { id: "proj_denizbank_2", name: "Denizbank", sector: "Temizlik", address: "Ostim 100. Yıl Bulvarı, Yenimahalle", lat: 39.967965, lng: 32.746508, accessStopId: "stop_ostim_m1", shift: "8.00-18.00", salary: "9.562₺", meal: "-", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey ile görüştürülecek" },
+    { id: "proj_denizbank_3", name: "Denizbank", sector: "Temizlik", address: "Turan Güneş Bulvarı, Çankaya", lat: 39.846071, lng: 32.836557, accessStopId: "stop_kizilay", shift: "8.00-18.00", salary: "-", meal: "-", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey ile görüştürülecek" },
+    { id: "proj_denizbank_call_center", name: "Denizbank Call Center", sector: "Çağrı Merkezi", address: "Göksu AVM, Etimesgut", lat: 39.986414, lng: 32.646415, accessStopId: "stop_etimesgut", shift: "8.00-17.00", salary: "30.000₺", meal: "12.000₺", transport: "3.300₺", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey ile görüştürülecek" },
+    { id: "proj_denizbank_intertech", name: "Denizbank İntertech", sector: "Temizlik", address: "Bilkent Kampüs, Çankaya", lat: 39.870603, lng: 32.750583, accessStopId: "stop_bilkent", shift: "8.30-18.00", salary: "30.000₺", meal: "12.000₺", transport: "3.300₺", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey ile görüştürülecek" },
+    { id: "proj_doc_s_vadi", name: "Doc's Vadi", sector: "Temizlik", address: "Cezayir Caddesi, Çankaya", lat: 39.872002, lng: 32.851049, accessStopId: "stop_kizilay", shift: "08.00-17.00", salary: "31.630₺", meal: "8.580₺", transport: "3.640₺", gender: "Erkek", referral: "Abdurrahman Bey - 0546 680 70 36>İSG" },
+    { id: "proj_duru_beytepe", name: "Duru Beytepe", sector: "Temizlik", address: "Ahlatlıbel Beytepe, Çankaya", lat: 39.8368111, lng: 32.7297404, accessStopId: "stop_beytepe", shift: "8.30-17.30", salary: "28.000₺", meal: "6.000₺", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>İSG" },
+    { id: "proj_elemor", name: "Elemor", sector: "Temizlik", address: "Çayyolu, Çankaya", lat: 39.8748898, lng: 32.6870843, accessStopId: "stop_cayyolu", shift: "09.00-18.00 K / 14.00-24.00 E", salary: "27.000₺", meal: "Yemekhane", transport: "1.700₺", referral: "Ofise davet>Serdar vatan", gender: "Kadın/Erkek" },
+    { id: "proj_inavitas", name: "İnavitas", sector: "Temizlik", address: "Batıkent, Yenimahalle", lat: 39.9493549, lng: 32.7204632, accessStopId: "stop_batikent", shift: "8.00-17.00", salary: "28.000₺", meal: "12.000₺", transport: "-", gender: "Kadın", referral: "Mustafa Bey - 0539 632 41 08>İSG" },
+    { id: "proj_is_bankasi", name: "İş Bankası", sector: "Temizlik", address: "Mustafa Kemal Mahallesi, Çankaya", lat: 39.909219, lng: 32.769126, accessStopId: "stop_kizilay", shift: "08.00-18.00", salary: "28.000₺", meal: "10.200₺", transport: "-", referral: "Ofise davet>Esat Bey", gender: "Kadın/Erkek" },
+    { id: "proj_kizilay_avm", name: "Kızılay AVM", sector: "Temizlik", address: "Kızılay, Çankaya", lat: 39.9213722, lng: 32.853286, accessStopId: "stop_kizilay", shift: "7.30-16.00 / 13.30-22.00 / Gece", salary: "30.000₺", meal: "7.500₺", transport: "1.200₺", gender: "Kadın/Erkek", referral: "Ofise davet" },
+    { id: "proj_marka_magazalar", name: "Marka Mağazalar", sector: "Temizlik", address: "Bilkent Center AVM, Çankaya", lat: 39.884009, lng: 32.758607, accessStopId: "stop_bilkent", shift: "9.30-18.30", salary: "30.000₺", meal: "7.500₺", transport: "2.500₺", referral: "Ofise davet", gender: "Erkek" },
+    { id: "proj_medical_park_hastane", name: "Medical Park Hastane", sector: "Temizlik", address: "Batıkent, Yenimahalle", lat: 39.9664474, lng: 32.7095556, accessStopId: "stop_batikent", shift: "7-15 / 15-23 / 23-7", salary: "28.000₺", meal: "Yemekhane", transport: "2.000₺", referral: "İsa Bey - 0545 860 90 12>İSG", gender: "Kadın/Erkek" },
+    { id: "proj_medical_park_hastane_2", name: "Medical Park Hastane", sector: "Temizlik", address: "Keçiören Belediyesi Karşısı, Keçiören", lat: 39.975277, lng: 32.867963, accessStopId: "stop_kecioren_belediye", shift: "7-15 / 15-23 / 23-7", salary: "28.000₺", meal: "Yemekhane", transport: "2.000₺", referral: "Oğuzhan Bey - 0533 478 40 19> İSG", gender: "Kadın/Erkek" },
+    { id: "proj_medical_park_hastane_3", name: "Medical Park Hastane", sector: "Temizlik", address: "İncek, Çankaya", lat: 39.8288529, lng: 32.7290956, accessStopId: "stop_cayyolu", shift: "08.00-17.00", salary: "28.000₺", meal: "Yemekhane", transport: "2.000₺", gender: "Kadın/Erkek", referral: "Aktif değil" },
+    { id: "proj_medipol_universitesi", name: "Medipol Üniversitesi", sector: "Temizlik", address: "Ankara Garı, Yenimahalle", lat: 39.9357479, lng: 32.845484, accessStopId: "stop_gar", shift: "8.00-18.00", salary: "28.000₺", meal: "Yemekhane", transport: "1.800₺", referral: "Ayten Hanım - 0538 973 28 30>İSG", gender: "Kadın/Erkek" },
+    { id: "proj_meteksan_matbaa_2", name: "Meteksan Matbaa", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.8713556, lng: 32.7431938, accessStopId: "stop_bilkent", shift: "08.00-18.00", salary: "30.000₺", meal: "Yemekhane", transport: "Servis", referral: "Ofise davet> Ali Deniz", gender: "Kadın/Erkek" },
+    { id: "proj_meteksan_savunma", name: "Meteksan Savunma", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.8784271, lng: 32.7469718, accessStopId: "stop_bilkent", shift: "08.00-18.00", salary: "30.000₺", meal: "Yemekhane", transport: "Servis", referral: "Ofise davet> Ali Deniz", gender: "Kadın/Erkek" },
+    { id: "proj_nazende", name: "Nazende", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.851209, lng: 32.7590237, accessStopId: "stop_beytepe", shift: "08.00-17.00", salary: "34.000₺", meal: "10.300₺", transport: "-", referral: "Ofise davet> Ali Deniz", gender: "Erkek" },
+    { id: "proj_odeabank", name: "Odeabank", sector: "Temizlik", address: "GOP, Çankaya", lat: 39.8918342, lng: 32.8708554, accessStopId: "stop_kizilay", shift: "08.00-18.00", salary: "31.500₺", meal: "12.600₺", transport: "Yok", gender: "Kadın/Erkek", referral: "Ofise davet>Esat Bey" },
+    { id: "proj_optimum_avm", name: "Optimum AVM", sector: "Temizlik", address: "Eryaman, Etimesgut", lat: 39.9656345, lng: 32.6315095, accessStopId: "stop_eryaman_m3", shift: "7.30-16.30/13.30-22", salary: "29.000₺", meal: "7.400₺", transport: "1.800₺", gender: "Kadın/Erkek", referral: "Hakan Bey - Danışmaya yönlendirilecek>İSG" },
+    { id: "proj_panora_avm", name: "Panora AVM", sector: "Temizlik", address: "Oran, Çankaya", lat: 39.8481487, lng: 32.8331251, accessStopId: "stop_cayyolu", shift: "7.30-16.30/13.30-22", salary: "33.000₺", meal: "8.500₺", transport: "Servis", referral: "Ofise davet>Sertaç Bey>Evrak işlemleri", gender: "Erkek" },
+    { id: "proj_parasut", name: "Paraşüt", sector: "Çağrı Merkezi", address: "Bilkent, Çankaya", lat: 39.908902, lng: 32.764544, accessStopId: "stop_bilkent", shift: "9.00-18.00", salary: "28.000₺", meal: "7.500₺", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Gökhan Devrez - 0538 281 13 22" },
+    { id: "proj_park_joven", name: "Park Joven", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.8638076, lng: 32.766768, accessStopId: "stop_bilkent", shift: "8.00-17.30", salary: "28.000₺", meal: "15.000₺", transport: "-", gender: "Kadın/Erkek", referral: "Aktif değil" },
+    { id: "proj_rec_adliye", name: "REC Adliye", sector: "Temizlik", address: "Gayret, 06170 Yenimahalle/Ankara", lat: 39.9591081, lng: 32.8110175, accessStopId: "stop_yenimahalle", shift: "8.00-17.00", salary: "31.500₺", meal: "Yemekhane", transport: "1.800₺", gender: "Kadın/Erkek", referral: "Projeye yönlendirilecek>Evrak işlemleri" },
+    { id: "proj_tepe_prime", name: "Tepe Prime", sector: "Temizlik", address: "Mustafa Kemal Mahallesi Bilkent, Çankaya", lat: 39.9096619, lng: 32.7552122, accessStopId: "stop_bilkent", shift: "8-16 / 11-20", salary: "28.000₺", meal: "7.500₺", transport: "2.000₺", referral: "Ayla hanım - 0553 244 69 53>İSG", gender: "Erkek" },
+    { id: "proj_tepe_servis_merkez_ofis", name: "Tepe Servis Merkez Ofis", sector: "Yönetim", address: "Bilkent Center AVM, Çankaya", lat: 39.882829, lng: 32.759688, accessStopId: "stop_bilkent", shift: "7.30-17.30", salary: "26.000₺", meal: "6.000₺", transport: "1.350₺", referral: "Ofise davet>Emrah Bey", gender: "Erkek" },
+    { id: "proj_tona", name: "Tona", sector: "Temizlik", address: "Alacaatlı, Çankaya", lat: 39.8239238, lng: 32.7089841, accessStopId: "stop_cayyolu", shift: "8.30-17.30", salary: "34.000₺", meal: "8.000₺", transport: "-", gender: "Erkek", referral: "Ofise davet - Ali Deniz" },
+    { id: "proj_toyan", name: "Toyan", sector: "Temizlik", address: "Öveçler, Çankaya", lat: 39.894506, lng: 32.823802, accessStopId: "stop_asti", shift: "9-18 / 11-19.30", salary: "22.000₺", meal: "Yemekhane", transport: "1.600₺", gender: "Erkek", referral: "Aktif değil" },
+    { id: "proj_turk_muteahhitler_birligi", name: "Türk Müteahhitler Birliği", sector: "Temizlik", address: "Birlik Mahallesi, Çankaya", lat: 39.879384, lng: 32.880171, accessStopId: "stop_kizilay", shift: "8.00-18.00", salary: "28.000₺", meal: "7.000₺", transport: "-", gender: "Erkek", referral: "Ofise davet - Ali Deniz" },
+    { id: "proj_vega", name: "Vega", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.913977, lng: 32.767145, accessStopId: "stop_bilkent", shift: "8.00-18.00", salary: "36.200₺", meal: "Yemekhane", transport: "1.800₺", referral: "Ofise davet>Musa Karakaya", gender: "Erkek" },
+    { id: "proj_via_flat", name: "Via Flat", sector: "Temizlik", address: "Söğütözü, Çankaya", lat: 39.914345, lng: 32.80865, accessStopId: "stop_sogutozu", shift: "8.00-17.30", salary: "28.000₺", meal: "6.000₺", transport: "600₺", referral: "Ayşe Hanım - 0533 668 82 27>İSG", gender: "Kadın" },
+    { id: "proj_entek", name: "Entek", sector: "Temizlik", address: "Kızılay, Çankaya", lat: 39.920372, lng: 32.852801, accessStopId: "stop_kizilay", shift: "8.30-17.30", salary: "33.000₺", meal: "8.000₺", transport: "3.500₺", gender: "Kadın", referral: "Ofise davet" },
+    { id: "proj_bilkent_otel", name: "Bilkent Otel", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.909055, lng: 32.765951, accessStopId: "stop_bilkent", shift: "7-15 / 15-23 / 23-8", salary: "30.200₺", meal: "Yemekhane", transport: "Servis", referral: "Ofise davet >Otele gönderme" },
+    { id: "proj_ido_cagri_merkezi", name: "İDO Çağrı Merkezi", sector: "Çağrı Merkezi", address: "Bilkent, Çankaya", lat: 39.906073, lng: 32.766012, accessStopId: "stop_bilkent", shift: "9.00-18.00", salary: "28.000₺", meal: "7.500₺", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Emine Çiftçi - 0552 664 47 11" },
+    { id: "proj_enerjisa_cagri_merkezi", name: "Enerjisa Çağrı Merkezi", sector: "Çağrı Merkezi", address: "Bilkent, Çankaya", lat: 39.908231, lng: 32.763953, accessStopId: "stop_bilkent", shift: "9.00-18.00", salary: "28.000₺", meal: "7.500₺", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Enerjisa ÇM Ekibi" },
+    { id: "proj_hop_scooter", name: "HOP Scooter", sector: "Çağrı Merkezi", address: "Bilkent, Çankaya", lat: 39.90803, lng: 32.766929, accessStopId: "stop_bilkent", shift: "9.00-18.00", salary: "32.000₺", meal: "7.500₺", transport: "-", gender: "Kadın/Erkek", referral: "Ofise davet>Hanım Özlem Kaplan - 0533 394 40 74" },
+    { id: "proj_tepe_insaat", name: "Tepe İnşaat", sector: "Temizlik", address: "Bilkent, Çankaya", lat: 39.906168, lng: 32.764599, accessStopId: "stop_bilkent", shift: "9.00-18.00", salary: "29.000₺", meal: "7.500₺", transport: "Servis", gender: "Kadın/Erkek", referral: "Ofise davet" },
+    { id: "proj_banvit_genel_mudurluk", name: "Banvit Genel Müdürlük", sector: "Temizlik", address: "Saray, Pursaklar", lat: 40.040837, lng: 32.926793, accessStopId: "stop_pursaklar_est", shift: "9.00-18.00", salary: "32.000₺-33.000₺", meal: "7.900₺", transport: "4.250₺", gender: "Kadın/Erkek", referral: "Ofise davet>Musa Karakaya" },
+    // Not: CSV'de semt "Çubuk" yazıyordu ama havalimanı gerçekte Akyurt
+    // sınırlarında (OSM Nominatim doğrulaması); Pursaklar'a en yakın
+    // modellenmiş durağı kullanıyoruz — bu bağlantı TAHMİNİ (doğrulanmadı).
+    { id: "proj_esenboga_havalimani", name: "Esenboğa Havalimanı", sector: "Temizlik", address: "Esenboğa, Akyurt", lat: 40.123063, lng: 32.998721, accessStopId: "stop_pursaklar_est", shift: "7-15 / 15-23 / 23-7", salary: "30.000₺", meal: "Yemekhane", transport: "Servis", gender: "Kadın/Erkek", referral: "Elif Hanım - 0533 607 28 24>Evrak işlemleri" },
+    // Not: Kazan, modellenen 9 ilçenin dışında; en yakın gerçek/doğrulanmış
+    // durak Sincan İstasyonu (~17 km), o yüzden bu bağlantı kaba bir yaklaşım.
+    { id: "proj_ankara_lojistik", name: "Ankara Lojistik", sector: "Temizlik", address: "Fethiye, 06980 Kahramankazan/Ankara", lat: 40.128235, lng: 32.556393, accessStopId: "stop_sincan", shift: "8.00-17.00", salary: "29.000₺", meal: "7.200₺", transport: "Servis", referral: "Ali Kazankaya  Ankara Lojistik - 0530 692 18 18 yönlendirilecek>İSG", gender: "Kadın/Erkek" },
+    // Not: Akyurt, modellenen 9 ilçenin dışında; en yakın gerçek/doğrulanmış
+    // durak Pursaklar (zaten TAHMİNİ), o yüzden bu bağlantı da kaba bir yaklaşım.
+    { id: "proj_dogadan", name: "Doğadan", sector: "Temizlik", address: "Akyurt", lat: 40.130753, lng: 33.087068, accessStopId: "stop_pursaklar_est", shift: "8-16 / 16-24 / 24-8", salary: "28.000₺", meal: "Yemekhane", transport: "Servis", referral: "Mustafa Bey - 0537 683 11 46>İSG", gender: "Kadın/Erkek" },
+    // Aşağıdaki 3 proje "Proje Bilgileri.xlsx" (2026-08-26 güncel liste) ile geldi.
+    { id: "proj_adidas", name: "Adidas", sector: "Temizlik", address: "Nata Vega, Mamak", lat: 39.885033, lng: 32.934234, accessStopId: "stop_mamak_baskentray", shift: "09.00-18.00", salary: "28.000₺", meal: "7.400₺", transport: "1.800₺", referral: "Ofise davet>Ali Deniz ile görüştürülecek", gender: "Kadın" },
+    { id: "proj_marubeni", name: "Marubeni", sector: "Temizlik", address: "İvedik, Yenimahalle", lat: 39.957240, lng: 32.817049, accessStopId: "stop_yenimahalle", shift: "7-15 / 15-23 / 23-7", salary: "28.000₺", meal: "Yemekhane", transport: "1.800₺", referral: "Ofise davet", gender: "Erkek" },
+    { id: "proj_yeni_atabilge_sitesi", name: "Yeni Atabilge Sitesi", sector: "Temizlik", address: "Alacaatlı, Çankaya", lat: 39.850506, lng: 32.643110, accessStopId: "stop_cayyolu", shift: "9.00-18.00", salary: "30.000₺", meal: "7.800₺", transport: "2.704₺", referral: "Ofise davet", gender: "Kadın/Erkek" },
   ],
 
-  // ---------------------------------------------------------------------
-  // KAYNAK: OpenStreetMap / Overpass API (overpass-api.de), 2026-09-07
-  // tarihinde çekilen GERÇEK İstanbul raylı sistem (metro, tramvay, Marmaray,
-  // füniküler) rota verilerine dayanır.
-  //
-  // KAPSAM: M1A, M1B, M2, M3, M4, M5, M6, M7, M8, M9, M11 metro hatları;
-  // T1-T5 tramvay hatları (T3 Kadıköy-Moda nostaljik tramvay dahil); F1-F4
-  // füniküler hatları; Marmaray (Gebze-Halkalı). Bu dizideki hatlar ana rota
-  // motoruna (Dijkstra) girer. OTOBÜS/METROBÜS hatları BURADA DEĞİL — onlar
-  // proje kökündeki transit_network.json'da (İETT resmi GTFS verisi, 1486
-  // hat/13.183 durak) ve buildRoutingNetwork ile aynı grafa eklenir; süre
-  // hesabına dahildir. Adres aramasındaki "yakında hangi otobüsler geçiyor"
-  // listesi de bu dosyadan gelir (bkz. app.js discoverNearbyTransitLocal).
-  //
-  // ATLANAN/HARİÇ TUTULAN VERİ (uydurmamak için):
-  // - "Darıca Sahil–Gebze OSB" ve "(Gebze–Sabiha Gökçen Havalimanı) Hattı":
-  //   İstanbul sınırları dışında/taslak relation, dahil edilmedi.
-  // - "Üsküdar-Cevizli"/"Cevizli-Üsküdar" (ref'siz, "tram" etiketli ama M5 ile
-  //   örtüşen 33 duraklı bir relation): kimliği doğrulanamadı, dahil edilmedi.
-  // - Teleferik/aerialway hatları (ör. TF2 Eyüp-Pierre Loti) sorgulanmadı.
-  // - M11 (Halkalı-Gayrettepe) 15 durakla geldi; hattın güncel açılış
-  //   durumuna göre OSM'de eksik durak olabilir, teyit edilmeli.
-  //
-  // BİLİNEN SINIRLAMA: bazı gerçek aktarmalar iki AYRI isimli istasyon
-  // arasında yürüyerek yapılır ve ortak bir stopId paylaşmaz (M2 "Şişli" ile
-  // M7 "Mecidiyeköy", ~300m). Bunun için app.js'te WALK_TRANSFERS listesi var
-  // — Ankara'daki HUB_BRIDGE'in muadili. Başka örnekler olabilir, tam tarama
-  // yapılmadı.
-  // ---------------------------------------------------------------------
+  // lat/lng alanları OSM/Overpass tabanlı Ankara toplu ulaşım veri setinden
+  // (28.08.2026, EGO Genel Müdürlüğü hat/durak verisi) isim eşleştirmesiyle
+  // eklendi — bkz. transit_network_raw.json. Ortak isimli ama şehrin farklı
+  // yerlerindeki duraklar (ör. "Kolej", "ASKİ", "Belediye") gerçek metro/
+  // Ankaray hat rotasında geçen doğru adayla doğrulandı, körü körüne
+  // ortalanmadı. stop_etlik ve stop_pursaklar_est için güvenilir bir eşleşme
+  // bulunamadı; bu ikisi koordinatsız bırakıldı ve stopApproxCoords()
+  // üzerinden eskisi gibi projelerden tahmin edilmeye devam edecek.
   transitStops: [
-    { id: "stop_kabatas", name: "Kabataş", mode: "hub", lat: 41.0344774, lng: 28.9926707 },
-    { id: "stop_findikli_msu", name: "Fındıklı - MSÜ", mode: "tramvay", lat: 41.0315308, lng: 28.9894567 },
-    { id: "stop_tophane", name: "Tophane", mode: "tramvay", lat: 41.0268005, lng: 28.9802781 },
-    { id: "stop_karakoy", name: "Karaköy", mode: "hub", lat: 41.0222299, lng: 28.9747557 },
-    { id: "stop_eminonu", name: "Eminönü", mode: "hub", lat: 41.0174499, lng: 28.9732148 },
-    { id: "stop_sirkeci", name: "Sirkeci", mode: "hub", lat: 41.0151642, lng: 28.9758304 },
-    { id: "stop_gulhane", name: "Gülhane", mode: "tramvay", lat: 41.0121632, lng: 28.9784087 },
-    { id: "stop_sultanahmet", name: "Sultanahmet", mode: "tramvay", lat: 41.0081113, lng: 28.9755143 },
-    { id: "stop_cemberlitas", name: "Çemberlitaş", mode: "tramvay", lat: 41.0084652, lng: 28.9711451 },
-    { id: "stop_beyazit_kapali_carsi", name: "Beyazıt - Kapalı Çarşı", mode: "tramvay", lat: 41.0090852, lng: 28.9666458 },
-    { id: "stop_aksaray", name: "Aksaray", mode: "hub", lat: 41.0096115, lng: 28.9538781 },
-    { id: "stop_yusufpasa", name: "Yusufpaşa", mode: "tramvay", lat: 41.0100961, lng: 28.9466545 },
-    { id: "stop_haseki", name: "Haseki", mode: "tramvay", lat: 41.0110406, lng: 28.9431092 },
-    { id: "stop_findikzade", name: "Fındıkzade", mode: "tramvay", lat: 41.0118214, lng: 28.9404859 },
-    { id: "stop_capa_sehremini", name: "Çapa-Şehremini", mode: "tramvay", lat: 41.015279, lng: 28.9333351 },
-    { id: "stop_pazartekke", name: "Pazartekke", mode: "tramvay", lat: 41.0182396, lng: 28.9271904 },
-    { id: "stop_topkapi", name: "Topkapı", mode: "hub", lat: 41.0192853, lng: 28.9194457 },
-    { id: "stop_cevizlibag_a_o_y", name: "Cevizlibağ-A.Ö.Y.", mode: "tramvay", lat: 41.0160557, lng: 28.9115859 },
-    { id: "stop_merkez_efendi", name: "Merkez Efendi", mode: "tramvay", lat: 41.0103501, lng: 28.9094588 },
-    { id: "stop_seyitnizam_aksemsettin", name: "Seyitnizam-Akşemsettin", mode: "tramvay", lat: 41.0042355, lng: 28.9073596 },
-    { id: "stop_mithatpasa", name: "Mithatpaşa", mode: "tramvay", lat: 41.003385, lng: 28.8998873 },
-    { id: "stop_mehmet_akif", name: "Mehmet Akif", mode: "tramvay", lat: 41.0058363, lng: 28.8816928 },
-    { id: "stop_merter_tekstil_merkezi", name: "Merter Tekstil Merkezi", mode: "tramvay", lat: 41.0115728, lng: 28.8807848 },
-    { id: "stop_gungoren", name: "Güngören", mode: "tramvay", lat: 41.0152632, lng: 28.877486 },
-    { id: "stop_akincilar", name: "Akıncılar", mode: "tramvay", lat: 41.0171401, lng: 28.8714699 },
-    { id: "stop_soganli", name: "Soğanlı", mode: "tramvay", lat: 41.0205923, lng: 28.8676168 },
-    { id: "stop_gunestepe", name: "Güneştepe", mode: "tramvay", lat: 41.028958, lng: 28.8610215 },
-    { id: "stop_yavuz_selim", name: "Yavuz Selim", mode: "tramvay", lat: 41.0235482, lng: 28.8640724 },
-    { id: "stop_zeytinburnu", name: "Zeytinburnu", mode: "hub", lat: 41.0015333, lng: 28.8901578 },
-    { id: "stop_bagcilar", name: "Bağcılar", mode: "tramvay", lat: 41.0322093, lng: 28.8606194 },
-    { id: "stop_taksim", name: "Taksim", mode: "hub", lat: 41.0367798, lng: 28.9866658 },
-    { id: "stop_beyoglu", name: "Beyoğlu", mode: "funikuler", lat: 41.0283447, lng: 28.9739892 },
-    { id: "stop_huseyin_aga_camii", name: "Hüseyin Ağa Camii", mode: "tramvay", lat: 41.0348722, lng: 28.9806501 },
-    { id: "stop_galatasaray_lisesi", name: "Galatasaray Lisesi", mode: "tramvay", lat: 41.0336607, lng: 28.9775878 },
-    { id: "stop_odakule", name: "Odakule", mode: "tramvay", lat: 41.0316434, lng: 28.9760385 },
-    { id: "stop_tunel", name: "Tünel", mode: "tramvay", lat: 41.0288361, lng: 28.9747735 },
-    { id: "stop_yenikapi", name: "Yenikapı", mode: "hub", lat: 41.005728, lng: 28.9505658 },
-    { id: "stop_emniyet_fatih", name: "Emniyet - Fatih", mode: "hub", lat: 41.0174301, lng: 28.9396317 },
-    { id: "stop_topkapi_ulubatli", name: "Topkapı Ulubatlı", mode: "hub", lat: 41.0238758, lng: 28.9306248 },
-    { id: "stop_bayrampasa_maltepe", name: "Bayrampaşa-Maltepe", mode: "hub", lat: 41.0341161, lng: 28.9203244 },
-    { id: "stop_sagmalcilar", name: "Sağmalcılar", mode: "hub", lat: 41.040912, lng: 28.9072258 },
-    { id: "stop_kocatepe", name: "Kocatepe", mode: "hub", lat: 41.0485107, lng: 28.8954577 },
-    { id: "stop_otogar", name: "Otogar", mode: "hub", lat: 41.0401083, lng: 28.8946163 },
-    { id: "stop_terazidere", name: "Terazidere", mode: "metro", lat: 41.0303612, lng: 28.897936 },
-    { id: "stop_davutpasa_ytu", name: "Davutpaşa - YTÜ", mode: "metro", lat: 41.0205272, lng: 28.900245 },
-    { id: "stop_merter", name: "Merter", mode: "metro", lat: 41.0076182, lng: 28.8961612 },
-    { id: "stop_bakirkoy_incirli", name: "Bakırköy-İncirli", mode: "metro", lat: 40.9966391, lng: 28.8753909 },
-    { id: "stop_bahcelievler", name: "Bahçelievler", mode: "metro", lat: 40.9955091, lng: 28.8632993 },
-    { id: "stop_atakoy_sirinevler", name: "Ataköy-Şirinevler", mode: "metro", lat: 40.9913766, lng: 28.8460141 },
-    { id: "stop_yenibosna", name: "Yenibosna", mode: "hub", lat: 40.9894444, lng: 28.8367394 },
-    { id: "stop_dtm_istanbul_fuar_merkezi", name: "DTM-İstanbul Fuar Merkezi", mode: "metro", lat: 40.9866459, lng: 28.8284451 },
-    { id: "stop_ataturk_havalimani", name: "Atatürk Havalimanı", mode: "metro", lat: 40.9797389, lng: 28.8210402 },
-    { id: "stop_kadikoy", name: "Kadıköy", mode: "metro", lat: 40.9904895, lng: 29.0222177 },
-    { id: "stop_ayrilik_cesmesi", name: "Ayrılık Çeşmesi", mode: "hub", lat: 41.0001803, lng: 29.0305822 },
-    { id: "stop_acibadem", name: "Acıbadem", mode: "metro", lat: 41.0021833, lng: 29.0443227 },
-    { id: "stop_unalan", name: "Ünalan", mode: "metro", lat: 40.9979489, lng: 29.0599485 },
-    { id: "stop_goztepe", name: "Göztepe", mode: "hub", lat: 40.9939726, lng: 29.0705409 },
-    { id: "stop_yenisahra", name: "Yenisahra", mode: "metro", lat: 40.9844847, lng: 29.09026 },
-    { id: "stop_kozyatagi", name: "Kozyatağı", mode: "hub", lat: 40.9752948, lng: 29.099433 },
-    { id: "stop_bostanci", name: "Bostancı", mode: "hub", lat: 40.964554, lng: 29.1050971 },
-    { id: "stop_kucukyali", name: "Küçükyalı", mode: "hub", lat: 40.9488718, lng: 29.1218816 },
-    { id: "stop_maltepe", name: "Maltepe", mode: "hub", lat: 40.9357512, lng: 29.139347 },
-    { id: "stop_huzurevi", name: "Huzurevi", mode: "metro", lat: 40.9298874, lng: 29.1466228 },
-    { id: "stop_gulsuyu", name: "Gülsuyu", mode: "metro", lat: 40.9237153, lng: 29.1546158 },
-    { id: "stop_esenkent", name: "Esenkent", mode: "metro", lat: 40.920721, lng: 29.1663075 },
-    { id: "stop_hastane_adliye", name: "Hastane Adliye", mode: "metro", lat: 40.9162552, lng: 29.1781645 },
-    { id: "stop_soganlik", name: "Soğanlık", mode: "metro", lat: 40.9131034, lng: 29.1923629 },
-    { id: "stop_kartal", name: "Kartal", mode: "hub", lat: 40.9064711, lng: 29.211193 },
-    { id: "stop_yakacik_adnan_kahveci", name: "Yakacık—Adnan Kahveci", mode: "metro", lat: 40.8965079, lng: 29.2269937 },
-    { id: "stop_pendik", name: "Pendik", mode: "hub", lat: 40.8885542, lng: 29.2384563 },
-    { id: "stop_tavsantepe", name: "Tavşantepe", mode: "metro", lat: 40.8820354, lng: 29.2487168 },
-    { id: "stop_fevzi_cakmak_hastane", name: "Fevzi Çakmak - Hastane", mode: "metro", lat: 40.888829, lng: 29.2626488 },
-    { id: "stop_yayalar_seyhli", name: "Yayalar-Şeyhli", mode: "metro", lat: 40.9036264, lng: 29.2751183 },
-    { id: "stop_kurtkoy", name: "Kurtköy", mode: "metro", lat: 40.9098537, lng: 29.2961025 },
-    { id: "stop_sabiha_gokcen_havalimani", name: "Sabiha Gökçen Havalimanı", mode: "metro", lat: 40.9064421, lng: 29.3114781 },
-    { id: "stop_kadikoy_ido_metro", name: "Kadıköy - İDO- Metro", mode: "tramvay", lat: 40.989981, lng: 29.0221226 },
-    { id: "stop_iskele_cami", name: "İskele Cami", mode: "tramvay", lat: 40.9906526, lng: 29.0231785 },
-    { id: "stop_carsi", name: "Çarşı", mode: "tramvay", lat: 40.9911511, lng: 29.025524 },
-    { id: "stop_altiyol", name: "Altıyol", mode: "tramvay", lat: 40.9893839, lng: 29.0288441 },
-    { id: "stop_bahariye", name: "Bahariye", mode: "tramvay", lat: 40.987668, lng: 29.0285525 },
-    { id: "stop_kilise", name: "Kilise", mode: "tramvay", lat: 40.9859846, lng: 29.0279178 },
-    { id: "stop_moda_ilkokulu", name: "Moda İlkokulu", mode: "tramvay", lat: 40.9840944, lng: 29.0266951 },
-    { id: "stop_moda_caddesi", name: "Moda Caddesi", mode: "tramvay", lat: 40.9840631, lng: 29.0243788 },
-    { id: "stop_riza_pasa", name: "Rıza Paşa", mode: "tramvay", lat: 40.9846726, lng: 29.0227213 },
-    { id: "stop_muhurdar", name: "Mühürdar", mode: "tramvay", lat: 40.9854891, lng: 29.0211099 },
-    { id: "stop_damga_sokak", name: "Damga Sokak", mode: "tramvay", lat: 40.9888514, lng: 29.0205606 },
-    { id: "stop_esenler", name: "Esenler", mode: "metro", lat: 41.0375458, lng: 28.8885667 },
-    { id: "stop_menderes", name: "Menderes", mode: "metro", lat: 41.0428043, lng: 28.8784472 },
-    { id: "stop_ucyuzlu", name: "Üçyüzlü", mode: "metro", lat: 41.036756, lng: 28.8706206 },
-    { id: "stop_bagcilar_meydan", name: "Bağcılar Meydan", mode: "metro", lat: 41.034741, lng: 28.8566453 },
-    { id: "stop_kirazli", name: "Kirazlı", mode: "hub", lat: 41.0318577, lng: 28.8421605 },
-    { id: "stop_gebze", name: "Gebze", mode: "marmaray", lat: 40.7839925, lng: 29.4107891 },
-    { id: "stop_darica", name: "Darıca", mode: "marmaray", lat: 40.7914702, lng: 29.3919766 },
-    { id: "stop_osmangazi", name: "Osmangazi", mode: "marmaray", lat: 40.7992974, lng: 29.3801707 },
-    { id: "stop_gtu_fatih", name: "GTÜ-Fatih", mode: "marmaray", lat: 40.8077161, lng: 29.3637973 },
-    { id: "stop_cayirova", name: "Çayırova", mode: "marmaray", lat: 40.8105826, lng: 29.3473857 },
-    { id: "stop_tuzla", name: "Tuzla", mode: "marmaray", lat: 40.8298362, lng: 29.3226734 },
-    { id: "stop_icmeler", name: "İçmeler", mode: "marmaray", lat: 40.8457446, lng: 29.3001066 },
-    { id: "stop_aydintepe", name: "Aydıntepe", mode: "marmaray", lat: 40.8523581, lng: 29.2932504 },
-    { id: "stop_guzelyali", name: "Güzelyalı", mode: "marmaray", lat: 40.8569574, lng: 29.2835991 },
-    { id: "stop_tersane", name: "Tersane", mode: "marmaray", lat: 40.8611722, lng: 29.2733746 },
-    { id: "stop_kaynarca", name: "Kaynarca", mode: "marmaray", lat: 40.8714179, lng: 29.2560275 },
-    { id: "stop_yunus", name: "Yunus", mode: "marmaray", lat: 40.8846053, lng: 29.210478 },
-    { id: "stop_basak", name: "Başak", mode: "marmaray", lat: 40.8903677, lng: 29.1775879 },
-    { id: "stop_atalar", name: "Atalar", mode: "marmaray", lat: 40.8988409, lng: 29.1692744 },
-    { id: "stop_cevizli", name: "Cevizli", mode: "marmaray", lat: 40.910029, lng: 29.1561754 },
-    { id: "stop_sureyya_plaji", name: "Süreyya Plajı", mode: "marmaray", lat: 40.9268311, lng: 29.1243411 },
-    { id: "stop_idealtepe", name: "İdealtepe", mode: "marmaray", lat: 40.937876, lng: 29.1143192 },
-    { id: "stop_suadiye", name: "Suadiye", mode: "marmaray", lat: 40.9605413, lng: 29.0844454 },
-    { id: "stop_erenkoy", name: "Erenköy", mode: "marmaray", lat: 40.9716866, lng: 29.0764605 },
-    { id: "stop_feneryolu", name: "Feneryolu", mode: "marmaray", lat: 40.978848, lng: 29.0488908 },
-    { id: "stop_sogutlucesme", name: "Söğütlüçeşme", mode: "marmaray", lat: 40.9907493, lng: 29.0380826 },
-    { id: "stop_uskudar", name: "Üsküdar", mode: "hub", lat: 41.0258396, lng: 29.0132642 },
-    { id: "stop_kazlicesme", name: "Kazlıçeşme", mode: "marmaray", lat: 40.9927446, lng: 28.9169682 },
-    { id: "stop_zeytinburnu_fisekhane", name: "Zeytinburnu-Fişekhane", mode: "marmaray", lat: 40.9859358, lng: 28.9053777 },
-    { id: "stop_yeni_mahalle", name: "Yeni Mahalle", mode: "marmaray", lat: 40.9818034, lng: 28.8810217 },
-    { id: "stop_bakirkoy", name: "Bakırköy", mode: "marmaray", lat: 40.9804407, lng: 28.8724034 },
-    { id: "stop_atakoy", name: "Ataköy", mode: "hub", lat: 40.9802954, lng: 28.8562255 },
-    { id: "stop_yesilyurt", name: "Yeşilyurt", mode: "marmaray", lat: 40.9655489, lng: 28.8372396 },
-    { id: "stop_yesilkoy", name: "Yeşilköy", mode: "marmaray", lat: 40.9627331, lng: 28.8248804 },
-    { id: "stop_florya_akvaryum", name: "Florya Akvaryum", mode: "marmaray", lat: 40.9678693, lng: 28.7970755 },
-    { id: "stop_florya", name: "Florya", mode: "marmaray", lat: 40.9729697, lng: 28.7876456 },
-    { id: "stop_kucukcekmece", name: "Küçükçekmece", mode: "marmaray", lat: 40.9885491, lng: 28.773056 },
-    { id: "stop_mustafa_kemal", name: "Mustafa Kemal", mode: "marmaray", lat: 41.0061388, lng: 28.7739784 },
-    { id: "stop_halkali", name: "Halkalı", mode: "hub", lat: 41.0184381, lng: 28.7668524 },
-    { id: "stop_bakirkoy_sahil", name: "Bakırköy Sahil", mode: "metro", lat: 40.9735585, lng: 28.8679821 },
-    { id: "stop_ozgurluk_meydani", name: "Özgürlük Meydanı", mode: "metro", lat: 40.9817899, lng: 28.8743051 },
-    { id: "stop_incirli", name: "İncirli", mode: "metro", lat: 40.9976509, lng: 28.8753178 },
-    { id: "stop_haznedar", name: "Haznedar", mode: "metro", lat: 41.0047045, lng: 28.8718966 },
-    { id: "stop_ilkyuva", name: "İlkyuva", mode: "metro", lat: 41.0117328, lng: 28.8657307 },
-    { id: "stop_yildiztepe", name: "Yıldıztepe", mode: "metro", lat: 41.019572, lng: 28.8578319 },
-    { id: "stop_molla_gurani", name: "Molla Gürani", mode: "metro", lat: 41.0259558, lng: 28.8480788 },
-    { id: "stop_yeni_mahalle_2", name: "Yeni Mahalle", mode: "metro", lat: 41.0404308, lng: 28.8361223 },
-    { id: "stop_mahmutbey", name: "Mahmutbey", mode: "hub", lat: 41.0548896, lng: 28.8306126 },
-    { id: "stop_istoc", name: "İSTOÇ", mode: "metro", lat: 41.065077, lng: 28.8260847 },
-    { id: "stop_ikitelli_sanayi", name: "İkitelli Sanayi", mode: "hub", lat: 41.0713956, lng: 28.8038216 },
-    { id: "stop_turgut_ozal", name: "Turgut Özal", mode: "metro", lat: 41.0811589, lng: 28.7976309 },
-    { id: "stop_siteler", name: "Siteler", mode: "metro", lat: 41.0882794, lng: 28.7966542 },
-    { id: "stop_basak_konutlari", name: "Başak Konutları", mode: "metro", lat: 41.0977803, lng: 28.7914561 },
-    { id: "stop_metrokent", name: "Metrokent", mode: "metro", lat: 41.1082043, lng: 28.8016211 },
-    { id: "stop_onurkent", name: "Onurkent", mode: "metro", lat: 41.1135424, lng: 28.7904668 },
-    { id: "stop_sehir_hastanesi", name: "Şehir Hastanesi", mode: "metro", lat: 41.1032857, lng: 28.7775639 },
-    { id: "stop_toplu_konutlar", name: "Toplu Konutlar", mode: "metro", lat: 41.1077392, lng: 28.768059 },
-    { id: "stop_kayasehir_merkez", name: "Kayaşehir Merkez", mode: "metro", lat: 41.1190274, lng: 28.7663849 },
-    { id: "stop_cobancesme", name: "Çobançeşme", mode: "metro", lat: 40.9997593, lng: 28.822727 },
-    { id: "stop_29_ekim_cumhuriyet", name: "29 Ekim Cumhuriyet", mode: "metro", lat: 41.006234, lng: 28.8188131 },
-    { id: "stop_dogu_sanayi", name: "Doğu Sanayi", mode: "metro", lat: 41.0149429, lng: 28.8181549 },
-    { id: "stop_mimar_sinan", name: "Mimar Sinan", mode: "metro", lat: 41.0250791, lng: 28.8167821 },
-    { id: "stop_15_temmuz", name: "15 Temmuz", mode: "metro", lat: 41.0369237, lng: 28.8142134 },
-    { id: "stop_halkali_caddesi", name: "Halkalı Caddesi", mode: "metro", lat: 41.0451704, lng: 28.8066077 },
-    { id: "stop_ataturk_mahallesi", name: "Atatürk Mahallesi", mode: "metro", lat: 41.0521866, lng: 28.7989581 },
-    { id: "stop_bahariye_2", name: "Bahariye", mode: "metro", lat: 41.0585053, lng: 28.7994906 },
-    { id: "stop_masko", name: "MASKO", mode: "metro", lat: 41.0639891, lng: 28.8042749 },
-    { id: "stop_ziya_gokalp", name: "Ziya Gökalp", mode: "metro", lat: 41.0746891, lng: 28.786412 },
-    { id: "stop_olimpiyat", name: "Olimpiyat", mode: "metro", lat: 41.0796429, lng: 28.7670768 },
-    { id: "stop_mescid_i_selam", name: "Mescid-i Selam", mode: "tramvay", lat: 41.1162428, lng: 28.8511412 },
-    { id: "stop_cebeci", name: "Cebeci", mode: "tramvay", lat: 41.1124107, lng: 28.8575196 },
-    { id: "stop_yeni_mahalle_3", name: "Yeni Mahalle", mode: "tramvay", lat: 41.1002839, lng: 28.8628946 },
-    { id: "stop_haci_sukru", name: "Hacı Şükrü", mode: "tramvay", lat: 41.0933385, lng: 28.8638623 },
-    { id: "stop_50_yil_bastabya", name: "50. Yıl-Baştabya", mode: "tramvay", lat: 41.087787, lng: 28.8669014 },
-    { id: "stop_cumhuriyet_mahallesi", name: "Cumhuriyet Mahallesi", mode: "tramvay", lat: 41.0845661, lng: 28.8715664 },
-    { id: "stop_kiptas_venezia", name: "KİPTAŞ Venezia", mode: "tramvay", lat: 41.0812918, lng: 28.8745733 },
-    { id: "stop_karadeniz", name: "Karadeniz", mode: "tramvay", lat: 41.0751817, lng: 28.8824304 },
-    { id: "stop_taskopru", name: "Taşköprü", mode: "tramvay", lat: 41.0725735, lng: 28.8877129 },
-    { id: "stop_ali_fuat_basgil", name: "Ali Fuat Başgil", mode: "tramvay", lat: 41.0684467, lng: 28.8956044 },
-    { id: "stop_bosna_cukurcesme", name: "Bosna-Çukurçeşme", mode: "tramvay", lat: 41.0618015, lng: 28.9020548 },
-    { id: "stop_uluyol_berec", name: "Uluyol-Bereç", mode: "tramvay", lat: 41.0541152, lng: 28.9102178 },
-    { id: "stop_rami", name: "Rami", mode: "tramvay", lat: 41.0465704, lng: 28.9155264 },
-    { id: "stop_topcular", name: "Topçular", mode: "tramvay", lat: 41.0416106, lng: 28.9195261 },
-    { id: "stop_demirkapi", name: "Demirkapı", mode: "tramvay", lat: 41.0369846, lng: 28.9233484 },
-    { id: "stop_sehitlik", name: "Şehitlik", mode: "tramvay", lat: 41.0341412, lng: 28.9282944 },
-    { id: "stop_edirnekapi", name: "Edirnekapı", mode: "tramvay", lat: 41.0313088, lng: 28.9340531 },
-    { id: "stop_vatan", name: "Vatan", mode: "tramvay", lat: 41.0255685, lng: 28.9292392 },
-    { id: "stop_fetihkapi", name: "Fetihkapı", mode: "tramvay", lat: 41.0215177, lng: 28.9249855 },
-    { id: "stop_haciosman", name: "Hacıosman", mode: "metro", lat: 41.1398775, lng: 29.0303462 },
-    { id: "stop_darussafaka", name: "Darüşşafaka", mode: "metro", lat: 41.1292867, lng: 29.0248677 },
-    { id: "stop_ataturk_oto_sanayi", name: "Atatürk Oto Sanayi", mode: "metro", lat: 41.1181945, lng: 29.0239613 },
-    { id: "stop_itu_ayazaga", name: "İTÜ-Ayazağa", mode: "metro", lat: 41.1082049, lng: 29.0209202 },
-    { id: "stop_sanayi", name: "Sanayi", mode: "metro", lat: 41.0942446, lng: 29.0049849 },
-    { id: "stop_4_levent", name: "4. Levent", mode: "metro", lat: 41.086047, lng: 29.0069725 },
-    { id: "stop_levent", name: "Levent", mode: "hub", lat: 41.0769862, lng: 29.0135732 },
-    { id: "stop_gayrettepe", name: "Gayrettepe", mode: "hub", lat: 41.0691324, lng: 29.0110477 },
-    { id: "stop_sisli", name: "Şişli", mode: "metro", lat: 41.0646058, lng: 28.9926418 },
-    { id: "stop_osmanbey", name: "Osmanbey", mode: "metro", lat: 41.0527563, lng: 28.9872434 },
-    { id: "stop_sishane", name: "Şişhane", mode: "metro", lat: 41.0284104, lng: 28.9725882 },
-    { id: "stop_halic", name: "Haliç", mode: "metro", lat: 41.0226507, lng: 28.9665946 },
-    { id: "stop_vezneciler", name: "Vezneciler", mode: "metro", lat: 41.0122579, lng: 28.9595144 },
-    { id: "stop_seyrantepe", name: "Seyrantepe", mode: "hub", lat: 41.1012886, lng: 28.9957442 },
-    { id: "stop_bogazici_universitesi_hisarustu", name: "Boğaziçi Üniversitesi/Hisarüstü", mode: "metro", lat: 41.0853915, lng: 29.0456269 },
-    { id: "stop_etiler", name: "Etiler", mode: "metro", lat: 41.0824907, lng: 29.037567 },
-    { id: "stop_nispetiye", name: "Nispetiye", mode: "metro", lat: 41.077422, lng: 29.0239918 },
-    { id: "stop_vadi_istanbul", name: "Vadi İstanbul", mode: "funikuler", lat: 41.107559, lng: 28.9882407 },
-    { id: "stop_fistikagaci", name: "Fıstıkağacı", mode: "metro", lat: 41.0280497, lng: 29.0285937 },
-    { id: "stop_baglarbasi", name: "Bağlarbaşı", mode: "metro", lat: 41.0217617, lng: 29.0363203 },
-    { id: "stop_altunizade", name: "Altunizade", mode: "metro", lat: 41.0217742, lng: 29.048436 },
-    { id: "stop_kisikli", name: "Kısıklı", mode: "metro", lat: 41.0220866, lng: 29.0619282 },
-    { id: "stop_bulgurlu", name: "Bulgurlu", mode: "metro", lat: 41.0161665, lng: 29.0764166 },
-    { id: "stop_umraniye", name: "Ümraniye", mode: "metro", lat: 41.0244489, lng: 29.0847203 },
-    { id: "stop_carsi_2", name: "Çarşı", mode: "metro", lat: 41.0257977, lng: 29.0973586 },
-    { id: "stop_yamanevler", name: "Yamanevler", mode: "metro", lat: 41.0240795, lng: 29.1086815 },
-    { id: "stop_cakmak", name: "Çakmak", mode: "metro", lat: 41.0214949, lng: 29.1182375 },
-    { id: "stop_ihlamurkuyu", name: "Ihlamurkuyu", mode: "metro", lat: 41.0196907, lng: 29.1304822 },
-    { id: "stop_altinsehir", name: "Altınşehir", mode: "metro", lat: 41.0164848, lng: 29.1405992 },
-    { id: "stop_imam_hatip_lisesi", name: "İmam Hatip Lisesi", mode: "metro", lat: 41.0158999, lng: 29.1518013 },
-    { id: "stop_dudullu", name: "Dudullu", mode: "hub", lat: 41.0152062, lng: 29.1628733 },
-    { id: "stop_necip_fazil", name: "Necip Fazıl", mode: "metro", lat: 41.0159831, lng: 29.1793459 },
-    { id: "stop_cekmekoy", name: "Çekmeköy", mode: "metro", lat: 41.014462, lng: 29.1894989 },
-    { id: "stop_meclis", name: "Meclis", mode: "metro", lat: 41.0095407, lng: 29.1987716 },
-    { id: "stop_sarigazi", name: "Sarıgazi", mode: "metro", lat: 41.0099171, lng: 29.2125636 },
-    { id: "stop_sancaktepe_sehir_hastanesi", name: "Sancaktepe Şehir Hastanesi", mode: "metro", lat: 41.0009411, lng: 29.2174459 },
-    { id: "stop_sancaktepe", name: "Sancaktepe", mode: "metro", lat: 40.9920477, lng: 29.2288887 },
-    { id: "stop_samandira_merkez", name: "Samandıra Merkez", mode: "metro", lat: 40.9838069, lng: 29.2312944 },
-    { id: "stop_veysel_karani", name: "Veysel Karani", mode: "metro", lat: 40.9688309, lng: 29.239932 },
-    { id: "stop_hasanpasa", name: "Hasanpaşa", mode: "metro", lat: 40.9685726, lng: 29.2550552 },
-    { id: "stop_sultanbeyli", name: "Sultanbeyli", mode: "metro", lat: 40.9658951, lng: 29.2724753 },
-    { id: "stop_mecidiyekoy", name: "Mecidiyeköy", mode: "metro", lat: 41.0653135, lng: 28.9955607 },
-    { id: "stop_caglayan", name: "Çağlayan", mode: "metro", lat: 41.0707989, lng: 28.9806277 },
-    { id: "stop_kagithane", name: "Kağıthane", mode: "hub", lat: 41.079665, lng: 28.9731572 },
-    { id: "stop_nurtepe", name: "Nurtepe", mode: "metro", lat: 41.0799595, lng: 28.9632821 },
-    { id: "stop_alibeykoy", name: "Alibeyköy", mode: "metro", lat: 41.0791653, lng: 28.9495879 },
-    { id: "stop_circir_mahallesi", name: "Çırçır Mahallesi", mode: "metro", lat: 41.0802839, lng: 28.9361933 },
-    { id: "stop_veysel_karani_aksemsettin", name: "Veysel Karani-Akşemsettin", mode: "metro", lat: 41.0797574, lng: 28.9281764 },
-    { id: "stop_yesilpinar", name: "Yeşilpınar", mode: "metro", lat: 41.0824149, lng: 28.9183405 },
-    { id: "stop_k_zim_karabekir", name: "Kâzım Karabekir", mode: "metro", lat: 41.0854613, lng: 28.9085465 },
-    { id: "stop_yenimahalle", name: "Yenimahalle", mode: "metro", lat: 41.0839716, lng: 28.8928118 },
-    { id: "stop_karadeniz_mahallesi", name: "Karadeniz Mahallesi", mode: "metro", lat: 41.0813391, lng: 28.8749302 },
-    { id: "stop_giyimkent_tekstilkent", name: "Giyimkent-Tekstilkent", mode: "metro", lat: 41.0713794, lng: 28.8667234 },
-    { id: "stop_oruc_reis_yuzyil", name: "Oruç Reis - Yüzyıl", mode: "metro", lat: 41.0628956, lng: 28.8552786 },
-    { id: "stop_goztepe_2", name: "Göztepe", mode: "metro", lat: 41.0570155, lng: 28.8479518 },
-    { id: "stop_yildiz", name: "Yıldız", mode: "metro", lat: 41.0540063, lng: 29.0098445 },
-    { id: "stop_fulya", name: "Fulya", mode: "metro", lat: 41.0620788, lng: 29.007826 },
-    { id: "stop_alibeykoy_cep_otogari", name: "Alibeyköy Cep Otogarı", mode: "tramvay", lat: 41.0868716, lng: 28.9439324 },
-    { id: "stop_alibeykoy_metro", name: "Alibeyköy Metro", mode: "tramvay", lat: 41.0784279, lng: 28.9494362 },
-    { id: "stop_alibeykoy_merkez", name: "Alibeyköy Merkez", mode: "tramvay", lat: 41.0737108, lng: 28.945958 },
-    { id: "stop_universite", name: "Üniversite", mode: "tramvay", lat: 41.0699016, lng: 28.9428216 },
-    { id: "stop_silahtaraga_mahallesi", name: "Silahtarağa Mahallesi", mode: "tramvay", lat: 41.0648566, lng: 28.9429308 },
-    { id: "stop_eyupsultan_devlet_hastanesi", name: "Eyüpsultan Devlet Hastanesi", mode: "tramvay", lat: 41.056762, lng: 28.9411459 },
-    { id: "stop_eyupsultan_teleferik", name: "Eyüpsultan Teleferik", mode: "tramvay", lat: 41.0505614, lng: 28.9351644 },
-    { id: "stop_feshane", name: "Feshane", mode: "tramvay", lat: 41.0455401, lng: 28.9378997 },
-    { id: "stop_ayvansaray", name: "Ayvansaray", mode: "tramvay", lat: 41.0395444, lng: 28.9439399 },
-    { id: "stop_balat", name: "Balat", mode: "tramvay", lat: 41.0340207, lng: 28.9480391 },
-    { id: "stop_fener", name: "Fener", mode: "tramvay", lat: 41.0286148, lng: 28.9544538 },
-    { id: "stop_cibali", name: "Cibali", mode: "tramvay", lat: 41.0242282, lng: 28.9602875 },
-    { id: "stop_kucukpazar", name: "Küçükpazar", mode: "tramvay", lat: 41.0209233, lng: 28.9632559 },
-    { id: "stop_rumeli_hisarustu", name: "Rumeli Hisarüstü", mode: "funikuler", lat: 41.0850008, lng: 29.0460846 },
-    { id: "stop_asiyan", name: "Aşiyan", mode: "funikuler", lat: 41.0815409, lng: 29.0539745 },
-    { id: "stop_emin_ali_pasa", name: "Emin Ali Paşa", mode: "metro", lat: 40.9608531, lng: 29.0937566 },
-    { id: "stop_aysekadin", name: "Ayşekadın", mode: "metro", lat: 40.9668223, lng: 29.0870683 },
-    { id: "stop_kucukbakkalkoy", name: "Küçükbakkalköy", mode: "metro", lat: 40.9787235, lng: 29.1117422 },
-    { id: "stop_icerenkoy", name: "İçerenköy", mode: "metro", lat: 40.9787331, lng: 29.1262993 },
-    { id: "stop_kayisdagi", name: "Kayışdağı", mode: "metro", lat: 40.9846547, lng: 29.1378132 },
-    { id: "stop_mevlana", name: "Mevlana", mode: "metro", lat: 40.9920439, lng: 29.1534783 },
-    { id: "stop_imes", name: "İMES", mode: "metro", lat: 41.0000815, lng: 29.156482 },
-    { id: "stop_modoko", name: "MODOKO", mode: "metro", lat: 41.0072044, lng: 29.1621987 },
-    { id: "stop_huzur", name: "Huzur", mode: "metro", lat: 41.022634, lng: 29.1596341 },
-    { id: "stop_parseller", name: "Parseller", mode: "metro", lat: 41.0312515, lng: 29.152679 },
-    { id: "stop_halkali_stadi", name: "Halkalı Stadı", mode: "metro", lat: 41.056569, lng: 28.7748859 },
-    { id: "stop_olimpiyatkoy", name: "Olimpiyatköy", mode: "metro", lat: 41.0780764, lng: 28.7699116 },
-    { id: "stop_kayasehir", name: "Kayaşehir", mode: "metro", lat: 41.1173262, lng: 28.7658803 },
-    { id: "stop_ibn_haldun_universitesi", name: "İbn Haldun Üniversitesi", mode: "metro", lat: 41.1394663, lng: 28.793969 },
-    { id: "stop_arnavutkoy_hastane", name: "Arnavutköy Hastane", mode: "metro", lat: 41.1791198, lng: 28.74788 },
-    { id: "stop_tasoluk", name: "Taşoluk", mode: "metro", lat: 41.2070981, lng: 28.7160865 },
-    { id: "stop_kargo_terminali", name: "Kargo Terminali", mode: "metro", lat: 41.2553423, lng: 28.712731 },
-    { id: "stop_istanbul_havalimani", name: "İstanbul Havalimanı", mode: "metro", lat: 41.2558497, lng: 28.7426107 },
-    { id: "stop_ihsaniye", name: "İhsaniye", mode: "metro", lat: 41.2428514, lng: 28.8088272 },
-    { id: "stop_gokturk", name: "Göktürk", mode: "metro", lat: 41.1768557, lng: 28.8836397 },
-    { id: "stop_kemerburgaz", name: "Kemerburgaz", mode: "metro", lat: 41.1590973, lng: 28.9101084 },
-    { id: "stop_hasdal", name: "Hasdal", mode: "metro", lat: 41.1212278, lng: 28.9467385 },
+    { id: "stop_kizilay", name: "Kızılay (15 Temmuz Millî İrade)", mode: "hub", lat: 39.921896, lng: 32.854209 },
+    { id: "stop_batikent", name: "Batıkent", mode: "hub", lat: 39.968178, lng: 32.726769 },
+    { id: "stop_gar", name: "Ankara Gar", mode: "hub", lat: 39.934947, lng: 32.843102 },
 
-    // VAPUR İSKELELERİ — OpenStreetMap/Overpass (route=ferry), 2026-09-07.
-    // Not: İstanbul'un vapur hatları OSM'de metro kadar iyi haritalanmamış —
-    // 21 route=ferry relation'ından sadece birkaçında gerçek, isimli, koordinatlı
-    // durak (stop_position/ferry_terminal node'u) vardı; "Kabataş-Üsküdar",
-    // "Eminönü-Üsküdar" gibi bazı GERÇEK (relation adıyla doğrulanan) hatların
-    // OSM'de hiç durak noktası yoktu, o hatlarda mevcut raylı sistem hub'ı
-    // (stop_kabatas/stop_uskudar) yaklaşık iskele konumu olarak kullanıldı —
-    // aşağıdaki transitLines bloğunda ayrıca not düşüldü. stop_kadikoy_iskele
-    // ve stop_eminonu_iskele, aynı isimli mevcut metro/tramvay duraklarına
-    // (stop_kadikoy ~150m, stop_eminonu ~100m) app.js'teki WALK_TRANSFERS ile
-    // bağlanır (Şişli/Mecidiyeköy ile aynı yöntem).
-    { id: "stop_kadikoy_iskele", name: "Kadıköy İskelesi", mode: "vapur", lat: 40.9918235, lng: 29.0215476 },
-    { id: "stop_besiktas_iskele", name: "Beşiktaş İskelesi", mode: "vapur", lat: 41.0399916, lng: 29.0057053 },
-    { id: "stop_eminonu_iskele", name: "Eminönü İskelesi", mode: "vapur", lat: 41.0183472, lng: 28.973161 },
-    { id: "stop_kinaliada", name: "Kınalıada İskelesi", mode: "vapur", lat: 40.9102213, lng: 29.0558369 },
-    { id: "stop_burgazada", name: "Burgazada İskelesi", mode: "vapur", lat: 40.8810827, lng: 29.0707969 },
-    { id: "stop_heybeliada", name: "Heybeliada İskelesi", mode: "vapur", lat: 40.8780078, lng: 29.1014071 },
-    { id: "stop_buyukada", name: "Büyükada İskelesi", mode: "vapur", lat: 40.8747256, lng: 29.1255631 },
+    { id: "stop_ulus", name: "Ulus", mode: "metro", lat: 39.940112, lng: 32.852559 },
+    { id: "stop_yenimahalle", name: "Yenimahalle", mode: "metro", lat: 39.96194, lng: 32.804564 },
+    { id: "stop_demetevler", name: "Demetevler", mode: "metro", lat: 39.965495, lng: 32.793967 },
+    { id: "stop_ostim_m1", name: "OSTİM", mode: "metro", lat: 39.970232, lng: 32.744922 },
+    { id: "stop_kecioren_belediye", name: "Belediye (Keçiören)", mode: "metro", lat: 39.978006, lng: 32.868205 },
+    { id: "stop_cayyolu", name: "Çayyolu", mode: "metro", lat: 39.897845, lng: 32.691066 },
+    { id: "stop_bilkent", name: "Bilkent", mode: "metro", lat: 39.907556, lng: 32.765406 },
+    { id: "stop_eryaman_m3", name: "Eryaman 1-2", mode: "metro", lat: 39.980486, lng: 32.647871 },
+    { id: "stop_fatih_m3", name: "Fatih", mode: "metro", lat: 39.984072, lng: 32.5853 },
+    { id: "stop_sogutozu", name: "Söğütözü", mode: "metro", lat: 39.910778, lng: 32.808052 },
+    { id: "stop_beytepe", name: "Beytepe", mode: "metro", lat: 39.906239, lng: 32.733274 },
+    { id: "stop_umitkoy", name: "Ümitköy", mode: "metro", lat: 39.905365, lng: 32.707866 },
+    { id: "stop_macunkoy", name: "Macunköy", mode: "metro", lat: 39.971897, lng: 32.766628 },
+    { id: "stop_ivedik", name: "İvedik", mode: "metro", lat: 39.955877, lng: 32.817586 },
+    { id: "stop_m1_hastane", name: "Hastane (M1)", mode: "metro", lat: 39.969189, lng: 32.783444 },
+    { id: "stop_akkopru", name: "Akköprü", mode: "metro", lat: 39.951851, lng: 32.833858 },
+    { id: "stop_sihhiye", name: "Sıhhiye", mode: "metro", lat: 39.929345, lng: 32.854816 },
+    { id: "stop_akm", name: "AKM (Atatürk Kültür Merkezi)", mode: "metro", lat: 39.942715, lng: 32.842586 },
+    { id: "stop_disgapi", name: "Dışkapı", mode: "metro", lat: 39.955447, lng: 32.858667 },
+    { id: "stop_m4_adliye", name: "Adliye (M4)", mode: "metro", lat: 39.930732, lng: 32.852272 },
+    { id: "stop_aski", name: "ASKİ", mode: "metro", lat: 39.946434, lng: 32.848568 },
+    { id: "stop_necatibey", name: "Necatibey", mode: "metro", lat: 39.920299, lng: 32.848768 },
+    { id: "stop_odtu", name: "ODTÜ", mode: "metro", lat: 39.908485, lng: 32.78279 },
+    { id: "stop_milli_kutuphane", name: "Millî Kütüphane", mode: "metro", lat: 39.915228, lng: 32.82723 },
+    { id: "stop_tarim_bakanligi", name: "Tarım Bakanlığı-Danıştay", mode: "metro", lat: 39.906939, lng: 32.750084 },
+    { id: "stop_koru", name: "Koru", mode: "metro", lat: 39.886839, lng: 32.686335 },
+    { id: "stop_mta", name: "MTA", mode: "metro", lat: 39.908896, lng: 32.796324 },
+    { id: "stop_botanik", name: "Botanik", mode: "metro", lat: 39.980765, lng: 32.694145 },
+    { id: "stop_torekent", name: "OSB-Törekent", mode: "metro", lat: 39.987669, lng: 32.558908 },
+
+    { id: "stop_besevler", name: "Beşevler", mode: "ankaray", lat: 39.932598, lng: 32.828518 },
+    { id: "stop_bahcelievler", name: "Bahçelievler", mode: "ankaray", lat: 39.929458, lng: 32.818442 },
+    { id: "stop_asti", name: "AŞTİ", mode: "ankaray", lat: 39.918217, lng: 32.813928 },
+    { id: "stop_dikimevi", name: "Dikimevi", mode: "ankaray", lat: 39.932872, lng: 32.878175 },
+    { id: "stop_emek", name: "Emek", mode: "ankaray", lat: 39.922598, lng: 32.814066 },
+    { id: "stop_maltepe", name: "Maltepe", mode: "ankaray", lat: 39.932459, lng: 32.842557 },
+    { id: "stop_kolej", name: "Kolej", mode: "ankaray", lat: 39.924571, lng: 32.862919 },
+    { id: "stop_demirtepe", name: "Demirtepe", mode: "ankaray", lat: 39.924005, lng: 32.848938 },
+    { id: "stop_anadolu_anitkabir", name: "Anadolu/Anıtkabir", mode: "ankaray", lat: 39.934755, lng: 32.837268 },
+
+    { id: "stop_sincan", name: "Sincan İstasyonu", mode: "tren", lat: 39.964526, lng: 32.584176 },
+    { id: "stop_etimesgut", name: "Etimesgut İstasyonu", mode: "tren", lat: 39.949351, lng: 32.662849 },
+    { id: "stop_elvankent", name: "Elvankent İstasyonu", mode: "tren", lat: 39.95862, lng: 32.612276 },
+    { id: "stop_mamak_baskentray", name: "Mamak İstasyonu", mode: "tren", lat: 39.931391, lng: 32.911574 },
+    { id: "stop_behicbey", name: "Behiçbey İstasyonu", mode: "tren", lat: 39.931431, lng: 32.749489 },
+    { id: "stop_yenisehir_baskentray", name: "Yenişehir İstasyonu", mode: "tren", lat: 39.929111, lng: 32.857649 },
+    { id: "stop_hipodrom", name: "Hipodrom İstasyonu", mode: "tren", lat: 39.945289, lng: 32.825568 },
+    { id: "stop_gazi_baskentray", name: "Gazi İstasyonu", mode: "tren", lat: 39.940327, lng: 32.796384 },
+    { id: "stop_cebeci", name: "Cebeci İstasyonu", mode: "tren", lat: 39.933054, lng: 32.873959 },
+    { id: "stop_kayas", name: "Kayaş İstasyonu", mode: "tren", lat: 39.913547, lng: 32.96567 },
+
+    { id: "stop_etlik", name: "Etlik Son Durak", mode: "otobus" },
+    { id: "stop_golbasi", name: "Gölbaşı Hareket Noktası", mode: "otobus", lat: 39.767816, lng: 32.815404 },
+    { id: "stop_pursaklar_est", name: "Pursaklar (tahmini durak)", mode: "otobus" },
   ],
+
+  // Her hat, üzerindeki durak id'lerini listeler (fiziksel sıra önemli değil,
+  // sadece hangi durağın bu hatta olduğu önemli).
   transitLines: [
     {
-      id: "T1", name: "T1: Kabataş → Bağcılar", mode: "tramvay", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_kabatas", "stop_findikli_msu", "stop_tophane", "stop_karakoy", "stop_eminonu", "stop_sirkeci", "stop_gulhane", "stop_sultanahmet", "stop_cemberlitas", "stop_beyazit_kapali_carsi", "stop_aksaray", "stop_yusufpasa", "stop_haseki", "stop_findikzade", "stop_capa_sehremini", "stop_pazartekke", "stop_topkapi", "stop_cevizlibag_a_o_y", "stop_merkez_efendi", "stop_seyitnizam_aksemsettin", "stop_mithatpasa", "stop_mehmet_akif", "stop_merter_tekstil_merkezi", "stop_gungoren", "stop_akincilar", "stop_soganli", "stop_gunestepe", "stop_yavuz_selim", "stop_zeytinburnu", "stop_bagcilar"],
+      id: "M1", name: "M1-M2-M3 Metro (Koru - Çayyolu - Kızılay - Batıkent - OSB Törekent)", mode: "metro", verified: true,
+      // 2018/2019'da eski M1+M2+M3 hatları aktarmasız tek sefer olarak birleştirildi
+      // (bkz. tr.wikipedia.org/wiki/Ankara_Metrosu, EGO'nun kendi Hareket Saatleri
+      // sayfasında da tek hat: "M1-D/G: ÇAYYOLU-SİNCAN") — bu yüzden burada da tek
+      // hat olarak tutuluyor; ayrı tutmak Batıkent/Kızılay'da var olmayan sahte bir
+      // aktarma üretiyordu.
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-14 (birleştirildi 2026-09-06)",
+      stopIds: ["stop_bilkent", "stop_cayyolu", "stop_beytepe", "stop_umitkoy", "stop_milli_kutuphane", "stop_sogutozu", "stop_odtu", "stop_mta", "stop_tarim_bakanligi", "stop_koru", "stop_necatibey", "stop_kizilay", "stop_batikent", "stop_yenimahalle", "stop_demetevler", "stop_ostim_m1", "stop_macunkoy", "stop_ivedik", "stop_m1_hastane", "stop_akkopru", "stop_ulus", "stop_sihhiye", "stop_akm", "stop_torekent", "stop_fatih_m3", "stop_eryaman_m3", "stop_botanik"],
+      geometry: [[39.8869, 32.68624], [39.88746, 32.68679], [39.88787, 32.68722], [39.88821, 32.68761], [39.8885, 32.68794], [39.88878, 32.68826], [39.88907, 32.6885], [39.89029, 32.68938], [39.8906, 32.6895], [39.89098, 32.68956], [39.89139, 32.68956], [39.89355, 32.68953], [39.89386, 32.68955], [39.89426, 32.6897], [39.89532, 32.69037], [39.89681, 32.69087], [39.8972, 32.69089], [39.89785, 32.69094], [39.8986, 32.69101], [39.90146, 32.69149], [39.90191, 32.69169], [39.90224, 32.69194], [39.90256, 32.69229], [39.9036, 32.69384], [39.90379, 32.69421], [39.90403, 32.69477], [39.90419, 32.69517], [39.90435, 32.6956], [39.90449, 32.69601], [39.90463, 32.69647], [39.90475, 32.69699], [39.90483, 32.69743], [39.9049, 32.69796], [39.90493, 32.69838], [39.90541, 32.70707], [39.90545, 32.70786], [39.90548, 32.70885], [39.90612, 32.72386], [39.90636, 32.72984], [39.90633, 32.73026], [39.90621, 32.73143], [39.90623, 32.73206], [39.90626, 32.73248], [39.90632, 32.73326], [39.90639, 32.73422], [39.90641, 32.73467], [39.90645, 32.73525], [39.90651, 32.73585], [39.90659, 32.73653], [39.90664, 32.73716], [39.90667, 32.73785], [39.90698, 32.74584], [39.90699, 32.74683], [39.90699, 32.74777], [39.90696, 32.74827], [39.90696, 32.74873], [39.90699, 32.74923], [39.90702, 32.75008], [39.90705, 32.75095], [39.90709, 32.75201], [39.90716, 32.75277], [39.9072, 32.75332], [39.90751, 32.76019], [39.90752, 32.7614], [39.90747, 32.76345], [39.90749, 32.76399], [39.90754, 32.76453], [39.90764, 32.76539], [39.90774, 32.76634], [39.90781, 32.76679], [39.90795, 32.76755], [39.90799, 32.76799], [39.90801, 32.76858], [39.90842, 32.78209], [39.9084, 32.78267], [39.9084, 32.7832], [39.90842, 32.78376], [39.90845, 32.78457], [39.90849, 32.78559], [39.90853, 32.78626], [39.90859, 32.78673], [39.90865, 32.78746], [39.90867, 32.78798], [39.90868, 32.78863], [39.90886, 32.79412], [39.90893, 32.79498], [39.90896, 32.79545], [39.90899, 32.79632], [39.90902, 32.79721], [39.90906, 32.79843], [39.90909, 32.799], [39.90914, 32.79961], [39.90919, 32.8001], [39.90968, 32.80312], [39.90981, 32.80382], [39.90995, 32.80449], [39.9105, 32.80656], [39.91066, 32.80723], [39.91086, 32.80801], [39.91108, 32.80891], [39.91464, 32.82374], [39.91497, 32.82542], [39.91514, 32.82643], [39.91528, 32.82722], [39.91544, 32.82812], [39.91563, 32.82916], [39.91581, 32.83026], [39.91613, 32.83317], [39.91621, 32.83488], [39.91622, 32.836], [39.91621, 32.837], [39.91617, 32.83787], [39.91611, 32.83859], [39.91604, 32.83912], [39.91533, 32.84363], [39.91521, 32.84443], [39.91507, 32.84533], [39.91496, 32.84589], [39.91481, 32.84653], [39.91461, 32.84721], [39.91361, 32.85053], [39.91345, 32.85112], [39.91338, 32.85159], [39.91334, 32.852], [39.91334, 32.85249], [39.91339, 32.85292], [39.91347, 32.8534], [39.91359, 32.8539], [39.91374, 32.85432], [39.91398, 32.85472], [39.91426, 32.85501], [39.91461, 32.85519], [39.91492, 32.85524], [39.91528, 32.85519], [39.91559, 32.85509], [39.91675, 32.85464], [39.91714, 32.85448], [39.91767, 32.85428], [39.9184, 32.854], [39.91887, 32.85388], [39.91923, 32.85386], [39.92022, 32.85384], [39.92023, 32.85408], [39.92057, 32.85407], [39.92115, 32.85406], [39.92169, 32.85407], [39.92205, 32.85413], [39.92241, 32.85419], [39.92591, 32.8551], [39.92632, 32.8552], [39.92665, 32.85525], [39.9271, 32.85525], [39.92749, 32.85518], [39.92818, 32.855], [39.92883, 32.85483], [39.92944, 32.85471], [39.93002, 32.85455], [39.93074, 32.85437], [39.93121, 32.85422], [39.93164, 32.85401], [39.93193, 32.85383], [39.9338, 32.8526], [39.93418, 32.85241], [39.93485, 32.85225], [39.93734, 32.85213], [39.93777, 32.85203], [39.93819, 32.85178], [39.93862, 32.85137], [39.93925, 32.85067], [39.93965, 32.85027], [39.94001, 32.84991], [39.94028, 32.84964], [39.94088, 32.84892], [39.94133, 32.84833], [39.94393, 32.84468], [39.94439, 32.84403], [39.94483, 32.84341], [39.9474, 32.8399], [39.94775, 32.83944], [39.94967, 32.83682], [39.94994, 32.83646], [39.95066, 32.83547], [39.95122, 32.8347], [39.95197, 32.83373], [39.9513, 32.83478], [39.95153, 32.83428], [39.95196, 32.83369], [39.95248, 32.833], [39.95359, 32.83152], [39.95411, 32.83081], [39.95443, 32.83035], [39.95476, 32.82973], [39.95495, 32.82919], [39.95505, 32.82878], [39.95513, 32.82825], [39.95516, 32.82768], [39.95514, 32.82713], [39.95491, 32.82474], [39.95487, 32.82418], [39.95487, 32.82375], [39.95493, 32.82326], [39.95504, 32.82273], [39.95522, 32.82214], [39.95691, 32.81793], [39.95726, 32.81706], [39.95754, 32.81634], [39.95806, 32.815], [39.95892, 32.8128], [39.9596, 32.81108], [39.96, 32.81012], [39.96016, 32.80971], [39.96146, 32.80615], [39.96175, 32.80529], [39.96199, 32.80461], [39.96225, 32.80386], [39.96373, 32.7994], [39.96528, 32.79483], [39.96556, 32.79401], [39.96583, 32.79327], [39.96894, 32.7844], [39.96926, 32.78348], [39.96949, 32.78284], [39.97026, 32.7805], [39.97036, 32.7801], [39.97046, 32.77971], [39.97055, 32.77931], [39.97064, 32.7789], [39.97078, 32.7783], [39.97089, 32.7777], [39.971, 32.77694], [39.9711, 32.77618], [39.97116, 32.77559], [39.97122, 32.77499], [39.97161, 32.77047], [39.97168, 32.76961], [39.97178, 32.76838], [39.97185, 32.76753], [39.97193, 32.76663], [39.972, 32.76579], [39.97216, 32.76396], [39.97226, 32.76278], [39.97237, 32.76163], [39.97239, 32.7609], [39.97245, 32.76021], [39.97269, 32.75733], [39.97272, 32.7566], [39.97272, 32.75597], [39.97267, 32.75528], [39.97257, 32.75445], [39.97245, 32.75385], [39.97182, 32.75097], [39.97126, 32.74841], [39.97113, 32.74787], [39.97048, 32.74571], [39.97025, 32.74491], [39.97002, 32.74411], [39.9695, 32.74219], [39.96915, 32.7408], [39.96882, 32.73961], [39.96856, 32.73869], [39.96682, 32.73349], [39.9667, 32.73309], [39.9666, 32.73255], [39.96656, 32.73203], [39.96658, 32.73158], [39.96664, 32.73114], [39.96677, 32.73057], [39.96698, 32.72969], [39.96709, 32.72926], [39.96733, 32.72859], [39.96757, 32.72812], [39.96784, 32.72759], [39.96824, 32.72681], [39.96824, 32.72681], [39.96859, 32.72613], [39.96899, 32.72528], [39.96917, 32.7248], [39.96932, 32.72414], [39.96939, 32.72365], [39.9694, 32.72313], [39.96938, 32.72266], [39.9693, 32.7222], [39.96919, 32.72172], [39.96906, 32.72124], [39.96879, 32.72038], [39.96857, 32.71967], [39.96841, 32.71915], [39.96826, 32.71856], [39.9681, 32.71789], [39.96803, 32.71749], [39.96785, 32.71632], [39.96772, 32.71532], [39.96761, 32.71453], [39.96751, 32.71368], [39.9675, 32.71315], [39.96754, 32.71268], [39.96766, 32.71214], [39.96783, 32.71164], [39.96839, 32.7107], [39.96864, 32.71034], [39.96908, 32.70962], [39.9694, 32.70905], [39.96969, 32.70847], [39.96993, 32.70789], [39.97007, 32.7075], [39.97021, 32.70696], [39.97034, 32.70649], [39.97049, 32.70605], [39.97073, 32.70549], [39.97136, 32.70403], [39.97176, 32.70313], [39.972, 32.70255], [39.97218, 32.70217], [39.97238, 32.70181], [39.9726, 32.70151], [39.97294, 32.70113], [39.97331, 32.70079], [39.9775, 32.69739], [39.97779, 32.69711], [39.97949, 32.69534], [39.97974, 32.69509], [39.98024, 32.69469], [39.9808, 32.69424], [39.98138, 32.69378], [39.98227, 32.69307], [39.98261, 32.69281], [39.98286, 32.69251], [39.9831, 32.69208], [39.98329, 32.69162], [39.98344, 32.69105], [39.98353, 32.69054], [39.98359, 32.69004], [39.98362, 32.6896], [39.98362, 32.68909], [39.98358, 32.68558], [39.98356, 32.68493], [39.98353, 32.68452], [39.98346, 32.68392], [39.98331, 32.68297], [39.98322, 32.68236], [39.98311, 32.68173], [39.98298, 32.68112], [39.98287, 32.68066], [39.98277, 32.68024], [39.98254, 32.6794], [39.98147, 32.67577], [39.98087, 32.6738], [39.98054, 32.67267], [39.98034, 32.67194], [39.98019, 32.6714], [39.98001, 32.6706], [39.97988, 32.66992], [39.97976, 32.66911], [39.97962, 32.66791], [39.97955, 32.6672], [39.97952, 32.66589], [39.97953, 32.66487], [39.9796, 32.66366], [39.97967, 32.66271], [39.97973, 32.66185], [39.98006, 32.65782], [39.98018, 32.65628], [39.98021, 32.6558], [39.98026, 32.65489], [39.9803, 32.65409], [39.98033, 32.65314], [39.98039, 32.65148], [39.98048, 32.64877], [39.98051, 32.64787], [39.98054, 32.64688], [39.98064, 32.64371], [39.98065, 32.64327], [39.98067, 32.64253], [39.98073, 32.64126], [39.9811, 32.62878], [39.98111, 32.62833], [39.98114, 32.62737], [39.98118, 32.62651], [39.98123, 32.62429], [39.98125, 32.62366], [39.98138, 32.61945], [39.98139, 32.61879], [39.98145, 32.61702], [39.9815, 32.61554], [39.98151, 32.61504], [39.98153, 32.61442], [39.98156, 32.61322], [39.98159, 32.61237], [39.98162, 32.61137], [39.98175, 32.60727], [39.98188, 32.60284], [39.9819, 32.60213], [39.98192, 32.60168], [39.98195, 32.60127], [39.98203, 32.60045], [39.98217, 32.59927], [39.98228, 32.59839], [39.9824, 32.59749], [39.98272, 32.59524], [39.98394, 32.58637], [39.98409, 32.58531], [39.9842, 32.58448], [39.98537, 32.57586], [39.98545, 32.57525], [39.98557, 32.57434], [39.98569, 32.5735], [39.98584, 32.57237], [39.98713, 32.56294], [39.98728, 32.56193], [39.98764, 32.55958], [39.98773, 32.55892]],
     },
     {
-      id: "F1", name: "F1: Taksim → Kabataş", mode: "funikuler", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_taksim", "stop_kabatas"],
+      id: "M4", name: "M4 Metro (Kızılay - Keçiören)", mode: "metro", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-14",
+      stopIds: ["stop_kizilay", "stop_disgapi", "stop_m4_adliye", "stop_aski", "stop_gar", "stop_kecioren_belediye"],
+      geometry: [[39.91942,32.85302],[39.92008,32.85298],[39.92063,32.85294],[39.92115,32.85298],[39.92161,32.85307],[39.92487,32.85386],[39.92545,32.85398],[39.92595,32.85406],[39.92628,32.85407],[39.92664,32.85406],[39.92733,32.85393],[39.92771,32.8538],[39.92806,32.85362],[39.9284,32.85339],[39.92874,32.85313],[39.92911,32.85279],[39.92955,32.85222],[39.93003,32.85143],[39.93063,32.8505],[39.93105,32.84985],[39.93128,32.84938],[39.93143,32.84896],[39.93168,32.84804],[39.93192,32.84708],[39.93213,32.84632],[39.93232,32.84576],[39.93253,32.84531],[39.93273,32.84492],[39.93324,32.84402],[39.93367,32.84327],[39.93404,32.84263],[39.93447,32.84184],[39.935,32.84086],[39.93522,32.84056],[39.93546,32.84024],[39.93581,32.83991],[39.93625,32.83965],[39.93668,32.83949],[39.93705,32.83941],[39.93753,32.8394],[39.93786,32.83944],[39.93838,32.8397],[39.93885,32.84013],[39.94207,32.84365],[39.94276,32.8444],[39.94327,32.84496],[39.94411,32.84594],[39.94441,32.8463],[39.9455,32.84791],[39.94643,32.84903],[39.94708,32.84977],[39.94771,32.85049],[39.94826,32.8511],[39.95478,32.85809],[39.95539,32.85876],[39.95583,32.85925],[39.95614,32.85957],[39.95647,32.85986],[39.95683,32.86014],[39.95724,32.86039],[39.95781,32.86067],[39.95887,32.86098],[39.95923,32.86112],[39.95955,32.86122],[39.96561,32.86375],[39.96639,32.86405],[39.96703,32.86429],[39.96738,32.86442],[39.96779,32.86442],[39.96825,32.86428],[39.9694,32.86372],[39.96979,32.86357],[39.97087,32.86328],[39.97136,32.8632],[39.97314,32.86297],[39.97356,32.86293],[39.97398,32.86297],[39.97431,32.86301],[39.97462,32.86308],[39.97504,32.8632],[39.97536,32.86332],[39.97569,32.86348],[39.97599,32.86368],[39.97627,32.86393],[39.97653,32.8642],[39.97677,32.86451],[39.97698,32.86486],[39.97718,32.86525],[39.97734,32.86567],[39.97747,32.8661],[39.97774,32.8673],[39.97793,32.86823],[39.9781,32.86908],[39.97857,32.8712],[39.97872,32.8716],[39.9789,32.87194],[39.9815,32.87467],[39.98181,32.87493],[39.98216,32.87512],[39.983,32.87529],[39.98375,32.87538],[39.98434,32.87544],[39.98682,32.87583],[39.98761,32.87594],[39.98823,32.876],[39.98878,32.87594],[39.98935,32.87582],[39.98968,32.87574],[39.99036,32.87551],[39.99098,32.87532],[39.99147,32.87518],[39.99183,32.87512],[39.99229,32.87515],[39.99275,32.87529],[39.99342,32.87562],[39.99385,32.87582],[39.99417,32.87593],[39.99464,32.87606],[39.99697,32.87658],[39.9973,32.87662],[39.99857,32.87625],[39.99895,32.87609],[39.99927,32.87582],[39.99953,32.87547],[39.99973,32.87505],[39.99986,32.87462],[39.99999,32.87397],[40.00006,32.8734],[40.00009,32.87256],[40.00009,32.87211],[40.00005,32.87167],[40.0,32.87126],[39.99984,32.87033],[39.9997,32.86958],[39.99917,32.86706],[39.99909,32.8666],[39.9989,32.86517],[39.99877,32.86463],[39.99858,32.8641],[39.99834,32.86364],[39.99806,32.86324],[39.99782,32.86296],[39.9976,32.86267],[39.99734,32.8623],[39.99702,32.86179],[39.99679,32.86149],[39.99628,32.86087],[39.99589,32.86039],[39.99532,32.85966],[39.99528,32.8596]],
     },
     {
-      id: "F2", name: "Tünel (F2): Karaköy → Beyoğlu", mode: "funikuler", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_karakoy", "stop_beyoglu"],
+      id: "A1", name: "A1 Ankaray (Bahçelievler - Kızılay - Dikimevi)", mode: "ankaray", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-14",
+      stopIds: ["stop_anadolu_anitkabir", "stop_demirtepe", "stop_besevler", "stop_bahcelievler", "stop_emek", "stop_asti", "stop_kizilay", "stop_kolej", "stop_dikimevi", "stop_maltepe"],
+      geometry: [[39.91826,32.81442],[39.91863,32.81442],[39.91895,32.81439],[39.91927,32.81432],[39.91981,32.81429],[39.92014,32.81428],[39.92057,32.81426],[39.92095,32.81429],[39.92156,32.81443],[39.9224,32.81468],[39.92275,32.81478],[39.9232,32.81492],[39.92359,32.81504],[39.92451,32.81529],[39.92514,32.81555],[39.92576,32.81588],[39.92612,32.81608],[39.92652,32.81632],[39.92973,32.81856],[39.9304,32.81909],[39.9307,32.81943],[39.9311,32.81998],[39.93133,32.82032],[39.93179,32.82104],[39.93209,32.82158],[39.93232,32.82211],[39.93256,32.82274],[39.9327,32.82327],[39.93279,32.82381],[39.93283,32.82444],[39.93281,32.82505],[39.93242,32.82681],[39.93236,32.82726],[39.93237,32.82775],[39.93258,32.82853],[39.93275,32.82905],[39.93457,32.83457],[39.93469,32.83503],[39.93478,32.83544],[39.93486,32.83616],[39.93484,32.83669],[39.93474,32.83726],[39.93465,32.83787],[39.93452,32.8385],[39.93423,32.83923],[39.93295,32.84171],[39.93269,32.84213],[39.93245,32.84254],[39.93211,32.84309],[39.93174,32.84365],[39.93123,32.84426],[39.93097,32.84455],[39.93071,32.84479],[39.93018,32.84526],[39.92932,32.84586],[39.92885,32.84612],[39.92615,32.84746],[39.9257,32.84766],[39.9253,32.84784],[39.92483,32.84798],[39.9242,32.84809],[39.92368,32.84832],[39.92165,32.85034],[39.92126,32.8508],[39.92108,32.85116],[39.92088,32.85176],[39.92075,32.85242],[39.92071,32.85292],[39.92068,32.85339],[39.92068,32.85395],[39.92067,32.8545],[39.92068,32.85527],[39.92191,32.85968],[39.92206,32.86007],[39.92228,32.86041],[39.92283,32.86077],[39.92307,32.86104],[39.92336,32.86142],[39.9237,32.86185],[39.92737,32.86679],[39.92777,32.86725],[39.92801,32.86764],[39.92827,32.86845],[39.92843,32.86898],[39.92867,32.86978],[39.92899,32.87116],[39.92918,32.87181],[39.92945,32.8725],[39.92973,32.87304],[39.93002,32.8736],[39.93069,32.87474],[39.93162,32.87633],[39.93191,32.87684],[39.93209,32.87721],[39.93228,32.87758],[39.93253,32.87803]],
     },
     {
-      id: "T2", name: "T2: Taksim → Tünel", mode: "tramvay", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_taksim", "stop_huseyin_aga_camii", "stop_galatasaray_lisesi", "stop_odakule", "stop_tunel"],
+      id: "BASKENTRAY", name: "Başkentray (Sincan - Kayaş hattı)", mode: "tren", verified: true,
+      source: "OSM/Overpass, TCDD Taşımacılık — 2026-08-14",
+      // Not: Başkentray'ın gerçek "Eryaman YHT Gar" durağı M3'ün "Eryaman 1-2"
+      // durağına yürüme mesafesindedir (aynı fiziksel peron değil, ama aynı
+      // mahalle) — bu yüzden stop_eryaman_m3'ü de bu hatta dahil ediyoruz;
+      // aksi halde algoritma Sincan/Etimesgut'tan Eryaman'a giderken anlamsız
+      // şekilde şehir merkezine (Kızılay) gidip geri dönen bir rota öneriyordu.
+      stopIds: ["stop_sincan", "stop_behicbey", "stop_etimesgut", "stop_eryaman_m3", "stop_elvankent", "stop_yenisehir_baskentray", "stop_hipodrom", "stop_gazi_baskentray", "stop_gar", "stop_cebeci", "stop_mamak_baskentray", "stop_kayas"],
+      geometry: [[39.91341,32.97014],[39.91355,32.96888],[39.91358,32.96803],[39.91371,32.96372],[39.91374,32.96258],[39.91376,32.96205],[39.91381,32.9614],[39.91395,32.96065],[39.91426,32.95964],[39.91474,32.95823],[39.91498,32.95752],[39.91517,32.95709],[39.91548,32.95655],[39.91613,32.95551],[39.91652,32.95471],[39.91672,32.95413],[39.91682,32.95373],[39.9169,32.95328],[39.917,32.95253],[39.917,32.95193],[39.9169,32.94986],[39.91686,32.94898],[39.91683,32.94829],[39.91681,32.94787],[39.91687,32.94712],[39.91691,32.9467],[39.91794,32.9414],[39.91803,32.94094],[39.91828,32.94007],[39.91861,32.93924],[39.91901,32.93849],[39.91948,32.9378],[39.92002,32.93716],[39.92062,32.93647],[39.92107,32.93582],[39.92148,32.93516],[39.92181,32.93442],[39.92196,32.93404],[39.92288,32.93126],[39.92321,32.9302],[39.92346,32.92946],[39.92379,32.92876],[39.92419,32.92811],[39.92463,32.92747],[39.92505,32.92684],[39.92525,32.92651],[39.92542,32.92615],[39.92559,32.92578],[39.92572,32.9254],[39.92583,32.92501],[39.92596,32.9243],[39.92613,32.92212],[39.92619,32.92133],[39.9263,32.92056],[39.92645,32.91991],[39.92668,32.91917],[39.92698,32.91844],[39.92734,32.91776],[39.92774,32.91719],[39.92956,32.91503],[39.93002,32.91446],[39.93024,32.91413],[39.93064,32.91346],[39.93095,32.91278],[39.93175,32.91087],[39.93213,32.90986],[39.93236,32.90915],[39.93251,32.90843],[39.9327,32.90747],[39.93313,32.90498],[39.9333,32.90417],[39.93377,32.9024],[39.93427,32.90049],[39.93447,32.89973],[39.93478,32.89867],[39.93504,32.89796],[39.93532,32.89734],[39.93573,32.8967],[39.93618,32.89611],[39.93692,32.89542],[39.9372,32.89517],[39.93856,32.89398],[39.93912,32.89341],[39.93963,32.89288],[39.94008,32.89228],[39.94048,32.89162],[39.94077,32.89098],[39.94108,32.89013],[39.94126,32.88938],[39.94137,32.88854],[39.94141,32.88771],[39.9414,32.88727],[39.94136,32.88685],[39.94125,32.88602],[39.94106,32.88522],[39.94094,32.88482],[39.94074,32.88432],[39.9404,32.88361],[39.93991,32.88287],[39.93954,32.88241],[39.93928,32.88212],[39.93876,32.88166],[39.93846,32.88144],[39.93777,32.88104],[39.9368,32.88042],[39.93649,32.88018],[39.93586,32.8796],[39.93534,32.87906],[39.93481,32.87841],[39.93433,32.87781],[39.934,32.8773],[39.93378,32.87692],[39.9336,32.8765],[39.93322,32.87566],[39.933,32.8752],[39.93273,32.87467],[39.93238,32.8742],[39.9318,32.87362],[39.93035,32.87217],[39.92975,32.87142],[39.92944,32.87085],[39.92921,32.87026],[39.92907,32.86968],[39.92899,32.86896],[39.92895,32.86849],[39.92891,32.86723],[39.92889,32.86662],[39.92882,32.86454],[39.92881,32.86402],[39.92879,32.86349],[39.9288,32.86298],[39.92882,32.86251],[39.92904,32.86079],[39.92913,32.8601],[39.92916,32.85954],[39.92917,32.85628],[39.92918,32.85525],[39.92926,32.85389],[39.92931,32.85317],[39.92939,32.85229],[39.92952,32.85169],[39.92968,32.85113],[39.92992,32.8506],[39.93019,32.85012],[39.93054,32.84968],[39.93216,32.84788],[39.9325,32.8475],[39.93285,32.84712],[39.93351,32.84653],[39.93386,32.84617],[39.93422,32.84572],[39.93444,32.84539],[39.93601,32.84249],[39.93658,32.84142],[39.93695,32.84082],[39.93768,32.83982],[39.93802,32.83921],[39.93946,32.83656],[39.93975,32.83601],[39.94007,32.83543],[39.94333,32.82942],[39.94409,32.82799],[39.94461,32.82709],[39.94501,32.82639],[39.94539,32.82562],[39.9457,32.82485],[39.94598,32.82365],[39.94605,32.82325],[39.94613,32.82242],[39.94612,32.82159],[39.94605,32.82076],[39.94589,32.81996],[39.94527,32.81727],[39.94431,32.8132],[39.94396,32.81174],[39.94307,32.80807],[39.94131,32.80058],[39.94064,32.79744],[39.94021,32.79566],[39.94008,32.7951],[39.93995,32.79463],[39.93978,32.79403],[39.93927,32.79262],[39.93912,32.79223],[39.93735,32.78737],[39.93566,32.7825],[39.93459,32.77927],[39.93405,32.7777],[39.9334,32.77589],[39.93292,32.77424],[39.93269,32.77334],[39.93245,32.77234],[39.9322,32.77133],[39.93176,32.76921],[39.93126,32.76645],[39.93109,32.76542],[39.93099,32.76449],[39.93092,32.76354],[39.93091,32.76261],[39.93094,32.76166],[39.93126,32.75694],[39.93131,32.75626],[39.93151,32.75335],[39.93163,32.7518],[39.93163,32.75041],[39.93158,32.74969],[39.93148,32.74899],[39.93139,32.7485],[39.93113,32.74739],[39.9309,32.74659],[39.93062,32.74575],[39.93028,32.7448],[39.92612,32.73288],[39.92573,32.73167],[39.92545,32.73058],[39.92521,32.72937],[39.92503,32.72814],[39.92493,32.72689],[39.92489,32.72508],[39.92494,32.72381],[39.92508,32.7226],[39.92525,32.72147],[39.92655,32.71538],[39.92673,32.71461],[39.92701,32.71365],[39.92735,32.7126],[39.92775,32.71157],[39.9282,32.71059],[39.92875,32.70956],[39.92965,32.70809],[39.93126,32.70606],[39.93282,32.70414],[39.93507,32.70125],[39.93677,32.69909],[39.93808,32.69747],[39.93849,32.69696],[39.93893,32.6963],[39.93933,32.69563],[39.93971,32.69495],[39.94019,32.69398],[39.94053,32.6931],[39.94117,32.69117],[39.94153,32.69025],[39.94206,32.68897],[39.94232,32.68837],[39.94264,32.68761],[39.94395,32.68448],[39.94436,32.68346],[39.94456,32.68293],[39.94489,32.68186],[39.94769,32.67239],[39.94791,32.67151],[39.94812,32.67052],[39.94831,32.66947],[39.9485,32.66831],[39.94923,32.6639],[39.94957,32.66182],[39.94996,32.65941],[39.95012,32.65838],[39.95146,32.65145],[39.95172,32.65008],[39.95207,32.64829],[39.95287,32.64415],[39.95427,32.63713],[39.95451,32.63608],[39.95476,32.63517],[39.95503,32.63413],[39.95538,32.63277],[39.95605,32.62948],[39.95629,32.62831],[39.95644,32.6273],[39.95652,32.62657],[39.95667,32.62516],[39.95689,32.62277],[39.95716,32.61855],[39.95722,32.61763],[39.95732,32.61689],[39.95744,32.61614],[39.95763,32.6153],[39.95783,32.61461],[39.95808,32.61388],[39.95836,32.61317],[39.959,32.61145],[39.95955,32.60994],[39.95973,32.6094],[39.9599,32.60876],[39.96011,32.60795],[39.96027,32.60712],[39.96049,32.60574],[39.96114,32.60166],[39.96141,32.59985],[39.96176,32.59761],[39.96205,32.59573],[39.96214,32.59515],[39.96308,32.5892],[39.9633,32.58813],[39.96349,32.58747],[39.96365,32.587],[39.96412,32.58568],[39.96504,32.58308],[39.96529,32.58233],[39.96546,32.58182],[39.96629,32.57931],[39.96707,32.57692],[39.97112,32.56537]],
     },
     {
-      id: "M1A", name: "M1A: Yenikapı → Atatürk Havalimanı", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_yenikapi", "stop_aksaray", "stop_emniyet_fatih", "stop_topkapi_ulubatli", "stop_bayrampasa_maltepe", "stop_sagmalcilar", "stop_kocatepe", "stop_otogar", "stop_terazidere", "stop_davutpasa_ytu", "stop_merter", "stop_zeytinburnu", "stop_bakirkoy_incirli", "stop_bahcelievler", "stop_atakoy_sirinevler", "stop_yenibosna", "stop_dtm_istanbul_fuar_merkezi", "stop_ataturk_havalimani"],
+      id: "EGO_261_6", name: "EGO 261-6 Otobüsü (Kızılay - Etlik Son Durak)", mode: "otobus", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-14",
+      stopIds: ["stop_kizilay", "stop_etlik"],
+      geometry: [[39.94199,32.85429],[39.94154,32.85441],[39.9405,32.85439],[39.94002,32.85438],[39.93883,32.85437],[39.93776,32.85438],[39.93741,32.85438],[39.93701,32.85437],[39.93667,32.85437],[39.9362,32.85435],[39.93587,32.85432],[39.93548,32.85423],[39.93513,32.85412],[39.93467,32.85392],[39.93398,32.85359],[39.93349,32.85334],[39.93312,32.85323],[39.9328,32.85325],[39.9321,32.85365],[39.93152,32.85408],[39.9311,32.85433],[39.93066,32.85453],[39.93006,32.8547],[39.92973,32.85478],[39.92929,32.85489],[39.92821,32.85521],[39.92764,32.85527],[39.92718,32.85505],[39.92668,32.85503],[39.92618,32.855],[39.92471,32.85464],[39.92439,32.85456],[39.92397,32.85446],[39.92343,32.85431],[39.92304,32.85421],[39.92239,32.85404],[39.92199,32.85397],[39.92159,32.85395],[39.92125,32.85393],[39.92087,32.85391],[39.92035,32.85393],[39.91987,32.854],[39.9192,32.85404],[39.91816,32.85407],[39.9176,32.85409],[39.91703,32.85411],[39.91593,32.85414],[39.91649,32.85431],[39.91702,32.85429],[39.91741,32.85428],[39.91758,32.85495],[39.91762,32.85538],[39.9178,32.85632],[39.91803,32.8573],[39.91825,32.85808],[39.91846,32.85879],[39.91868,32.85966],[39.92018,32.85897],[39.92094,32.85855],[39.92139,32.8583],[39.92201,32.85797],[39.92259,32.85765],[39.92381,32.85698],[39.92491,32.85636],[39.92599,32.8558],[39.92637,32.8556],[39.9268,32.85552],[39.92722,32.85544],[39.92755,32.85535],[39.92772,32.85498],[39.92806,32.85484],[39.92856,32.85472],[39.93035,32.85432],[39.9307,32.85432],[39.93106,32.85419],[39.93147,32.85394],[39.93205,32.85353],[39.9325,32.85321],[39.93287,32.8531],[39.93332,32.85312],[39.93421,32.85353],[39.93502,32.85388],[39.93547,32.85408],[39.93584,32.85416],[39.93628,32.85421],[39.93701,32.85419],[39.93731,32.85438],[39.93767,32.85422],[39.93801,32.85424],[39.93961,32.85425],[39.93993,32.85425],[39.9403,32.85425],[39.9407,32.85424],[39.94153,32.85424],[39.94214,32.85436],[39.94259,32.85447],[39.94303,32.85454],[39.94396,32.85455],[39.94465,32.85455],[39.94503,32.85459],[39.9456,32.85472],[39.94622,32.85488],[39.94663,32.85506],[39.94693,32.85521],[39.94727,32.85539],[39.94782,32.85575],[39.94814,32.85601],[39.94767,32.85577],[39.94722,32.85547],[39.9469,32.8553],[39.94636,32.85506],[39.94579,32.85486],[39.94519,32.85472],[39.94468,32.85464],[39.94423,32.85465],[39.94387,32.85464],[39.94346,32.85463],[39.94309,32.8546],[39.94253,32.85456],[39.942,32.85451],[39.94188,32.85448]],
     },
     {
-      id: "M4", name: "M4: Kadıköy → Sabiha Gökçen Havalimanı", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_kadikoy", "stop_ayrilik_cesmesi", "stop_acibadem", "stop_unalan", "stop_goztepe", "stop_yenisahra", "stop_kozyatagi", "stop_bostanci", "stop_kucukyali", "stop_maltepe", "stop_huzurevi", "stop_gulsuyu", "stop_esenkent", "stop_hastane_adliye", "stop_soganlik", "stop_kartal", "stop_yakacik_adnan_kahveci", "stop_pendik", "stop_tavsantepe", "stop_fevzi_cakmak_hastane", "stop_yayalar_seyhli", "stop_kurtkoy", "stop_sabiha_gokcen_havalimani"],
+      id: "EGO_105_1", name: "EGO 105-1 Otobüsü (Gölbaşı - Kızılay - Ulus)", mode: "otobus", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-14",
+      stopIds: ["stop_golbasi", "stop_kizilay", "stop_ulus"],
+      geometry: [[39.76765,32.8159],[39.76771,32.81528],[39.76814,32.81537],[39.76905,32.81558],[39.77008,32.81581],[39.77094,32.8161],[39.77175,32.81639],[39.77272,32.81677],[39.77391,32.81722],[39.77456,32.81743],[39.77498,32.81744],[39.77531,32.81743],[39.77595,32.81736],[39.7764,32.81726],[39.7767,32.81711],[39.7771,32.81685],[39.77738,32.81658],[39.77764,32.8163],[39.77811,32.81579],[39.77843,32.81546],[39.77883,32.81522],[39.77916,32.81511],[39.7796,32.81503],[39.78157,32.81507],[39.7822,32.81511],[39.78251,32.8148],[39.78269,32.81395],[39.78331,32.8113],[39.78349,32.81048],[39.7837,32.80962],[39.78383,32.80914],[39.78395,32.80873],[39.7841,32.80829],[39.78431,32.8079],[39.78467,32.80755],[39.78498,32.80739],[39.78533,32.80727],[39.78582,32.80721],[39.78631,32.80727],[39.78661,32.80803],[39.78707,32.80864],[39.78657,32.81026],[39.78639,32.81082],[39.78622,32.81136],[39.78619,32.81187],[39.78629,32.8124],[39.78643,32.813],[39.78668,32.81406],[39.78653,32.81469],[39.78635,32.81545],[39.78625,32.81599],[39.78601,32.81707],[39.78593,32.81764],[39.78571,32.81834],[39.78542,32.81925],[39.78516,32.82007],[39.78496,32.82057],[39.78452,32.82175],[39.7839,32.82342],[39.78328,32.82512],[39.7826,32.82693],[39.78243,32.82736],[39.78207,32.8283],[39.78173,32.8292],[39.78161,32.82961],[39.78156,32.83016],[39.78153,32.83076],[39.78144,32.83185],[39.78143,32.83226],[39.78141,32.83272],[39.78117,32.83313],[39.78099,32.83361],[39.781,32.83404],[39.78128,32.83426],[39.78157,32.8345],[39.78183,32.83387],[39.78225,32.83288],[39.78303,32.83347],[39.78359,32.83217],[39.78414,32.83069],[39.7854,32.82725],[39.78634,32.82471],[39.78706,32.82284],[39.7876,32.8214],[39.78827,32.81975],[39.78861,32.8188],[39.78873,32.81841],[39.78885,32.81779],[39.78903,32.81636],[39.78927,32.81575],[39.78942,32.81535],[39.78984,32.8142],[39.79012,32.81375],[39.79044,32.81332],[39.79076,32.81297],[39.79124,32.81272],[39.79159,32.81255],[39.79197,32.81237],[39.79161,32.81163],[39.79132,32.81119],[39.79106,32.8109],[39.79077,32.81065],[39.79036,32.81038],[39.7898,32.81003],[39.78939,32.80979],[39.78906,32.8096],[39.78951,32.8069],[39.78965,32.80625],[39.79041,32.80649],[39.79086,32.80661],[39.79161,32.80678],[39.79204,32.80683],[39.79246,32.80688],[39.79286,32.80693],[39.79341,32.80697],[39.79394,32.80694],[39.79447,32.80689],[39.79486,32.80684],[39.7955,32.80672],[39.79607,32.80659],[39.79654,32.80648],[39.79687,32.8064],[39.79754,32.80623],[39.79796,32.80613],[39.79838,32.80602],[39.79912,32.80585],[39.80007,32.80557],[39.80044,32.80543],[39.80157,32.80514],[39.80265,32.80488],[39.80317,32.80476],[39.8039,32.80461],[39.80488,32.80439],[39.80544,32.80425],[39.80684,32.80392],[39.8074,32.80377],[39.80851,32.80341],[39.80915,32.80315],[39.80967,32.80289],[39.81014,32.80263],[39.8106,32.80235],[39.81115,32.80199],[39.81195,32.80137],[39.81454,32.79936],[39.81488,32.79911],[39.81525,32.79882],[39.81563,32.79854],[39.81631,32.79805],[39.81662,32.79784],[39.81692,32.79765],[39.8173,32.79745],[39.81766,32.7973],[39.81798,32.79717],[39.81848,32.79701],[39.81895,32.7969],[39.82111,32.79662],[39.82313,32.79641],[39.82636,32.79602],[39.82667,32.796],[39.82716,32.796],[39.82756,32.79604],[39.82789,32.79611],[39.82828,32.79624],[39.82876,32.79647],[39.82908,32.79663],[39.82992,32.79709],[39.83037,32.79731],[39.8308,32.79746],[39.8312,32.79755],[39.83172,32.79759],[39.83219,32.79756],[39.83266,32.79747],[39.83348,32.7972],[39.83393,32.79709],[39.83432,32.79705],[39.83489,32.79709],[39.83533,32.7972],[39.83581,32.79741],[39.83617,32.79765],[39.83655,32.79798],[39.83686,32.79832],[39.8378,32.79954],[39.8381,32.79995],[39.84007,32.80261],[39.84032,32.80303],[39.84064,32.80343],[39.84103,32.80399],[39.84161,32.80476],[39.84186,32.8051],[39.8424,32.80578],[39.84307,32.8067],[39.84342,32.80718],[39.84378,32.80768],[39.84411,32.80808],[39.84439,32.80829],[39.84467,32.80866],[39.84499,32.80902],[39.84538,32.80942],[39.8459,32.80985],[39.84625,32.81009],[39.84655,32.81038],[39.84699,32.81061],[39.84739,32.81077],[39.84794,32.81093],[39.84832,32.81101],[39.84882,32.81105],[39.84917,32.81106],[39.84962,32.81104],[39.84994,32.811],[39.85028,32.81093],[39.85077,32.8108],[39.85119,32.8106],[39.85156,32.81041],[39.85202,32.8102],[39.85242,32.80996],[39.85311,32.80966],[39.85374,32.80941],[39.85427,32.80926],[39.85479,32.80914],[39.85514,32.80907],[39.8555,32.80903],[39.85595,32.80901],[39.85628,32.80903],[39.8569,32.80906],[39.85739,32.80914],[39.85781,32.80924],[39.85831,32.80938],[39.85918,32.80968],[39.85972,32.80989],[39.86029,32.81008],[39.86074,32.8102],[39.86109,32.81027],[39.86149,32.81033],[39.8619,32.81037],[39.86224,32.81038],[39.86362,32.81033],[39.86407,32.81031],[39.86453,32.8103],[39.86489,32.8103],[39.86526,32.81031],[39.86574,32.81035],[39.86622,32.81041],[39.86834,32.81066],[39.87054,32.81091],[39.87252,32.81112],[39.87547,32.81143],[39.87793,32.81167],[39.88009,32.81191],[39.88065,32.81196],[39.88114,32.81201],[39.88165,32.81207],[39.88251,32.81214],[39.88301,32.81218],[39.88398,32.81225],[39.88443,32.81243],[39.8855,32.81253],[39.88597,32.81258],[39.88639,32.81263],[39.88677,32.81267],[39.88712,32.81271],[39.88847,32.81284],[39.88902,32.8129],[39.88939,32.8129],[39.89035,32.81296],[39.89116,32.81304],[39.89264,32.8132],[39.89301,32.81324],[39.89335,32.81327],[39.89428,32.81338],[39.89474,32.81343],[39.89558,32.81352],[39.89608,32.81357],[39.89815,32.8138],[39.89931,32.81393],[39.89985,32.81398],[39.9004,32.81404],[39.9012,32.81412],[39.90153,32.81416],[39.90203,32.81421],[39.90268,32.81428],[39.90337,32.81435],[39.90482,32.81452],[39.90746,32.81481],[39.90804,32.81485],[39.9087,32.81489],[39.90928,32.81489],[39.90963,32.81487],[39.91071,32.81485],[39.91111,32.81496],[39.91142,32.8151],[39.91173,32.81524],[39.91201,32.81546],[39.91252,32.81593],[39.91304,32.81672],[39.91339,32.81771],[39.9135,32.81816],[39.91394,32.82006],[39.91441,32.82198],[39.91463,32.82313],[39.91484,32.82406],[39.91497,32.82476],[39.91523,32.82607],[39.91531,32.82652],[39.91554,32.82786],[39.91562,32.82836],[39.91571,32.82902],[39.91587,32.83007],[39.91596,32.83062],[39.91601,32.83141],[39.91605,32.83241],[39.9161,32.83452],[39.91608,32.835],[39.91605,32.83572],[39.91599,32.83697],[39.91594,32.83772],[39.91592,32.83814],[39.91583,32.83895],[39.91572,32.83968],[39.91562,32.84034],[39.91554,32.84078],[39.91535,32.842],[39.91523,32.84278],[39.91519,32.84347],[39.91512,32.8439],[39.91496,32.84481],[39.91475,32.84614],[39.9146,32.84673],[39.9145,32.84716],[39.91437,32.84787],[39.91422,32.84862],[39.91414,32.84913],[39.91402,32.84996],[39.91376,32.85191],[39.91371,32.85234],[39.91352,32.8534],[39.91355,32.85384],[39.91379,32.85424],[39.91413,32.85436],[39.91542,32.85431],[39.91592,32.85433],[39.91649,32.85431],[39.91702,32.85429],[39.91741,32.85428],[39.91811,32.85427],[39.91888,32.85426],[39.91923,32.85425],[39.91962,32.85423],[39.91999,32.85422],[39.92031,32.85421],[39.92069,32.85419],[39.92119,32.85418],[39.92159,32.8542],[39.92193,32.85423],[39.92233,32.85429],[39.92266,32.85436],[39.92301,32.85442],[39.92424,32.85473],[39.92506,32.85496],[39.92605,32.85523],[39.92648,32.85535],[39.92691,32.85538],[39.9273,32.85532],[39.92764,32.85527],[39.928,32.8552],[39.92919,32.85502],[39.92973,32.85478],[39.93006,32.8547],[39.93043,32.8546],[39.93091,32.85443],[39.93132,32.85421],[39.9321,32.85365],[39.93257,32.85334],[39.93291,32.85323],[39.93329,32.85327],[39.93398,32.85359],[39.93467,32.85392],[39.93513,32.85412],[39.93548,32.85423],[39.93587,32.85432],[39.9362,32.85435],[39.93667,32.85437],[39.93701,32.85437],[39.93744,32.85427],[39.93721,32.85438]],
     },
     {
-      id: "T3", name: "T3: Kadıköy ↔ Moda Nostaljik Tramvay Hattı", mode: "tramvay", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_kadikoy_ido_metro", "stop_iskele_cami", "stop_carsi", "stop_altiyol", "stop_bahariye", "stop_kilise", "stop_moda_ilkokulu", "stop_moda_caddesi", "stop_riza_pasa", "stop_muhurdar", "stop_damga_sokak"],
+      id: "EGO_261", name: "EGO 261 Otobüsü (Ovacık/Kasalar - Bakanlıklar)", mode: "otobus", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-26",
+      stopIds: ["stop_kizilay", "stop_etlik"],
+      geometry: [[39.95126,32.85858],[39.95174,32.85801],[39.95253,32.85714],[39.95278,32.85684],[39.95378,32.85558],[39.95432,32.85483],[39.955,32.85397],[39.95532,32.85356],[39.95563,32.85315],[39.95587,32.85285],[39.95728,32.85107],[39.95759,32.85069],[39.95793,32.85027],[39.95823,32.84988],[39.95963,32.84821],[39.96005,32.84776],[39.96047,32.84728],[39.96087,32.84681],[39.96141,32.84609],[39.96174,32.84562],[39.96215,32.84508],[39.96327,32.84367],[39.96371,32.84312],[39.9642,32.84252],[39.96455,32.8421],[39.96525,32.84125],[39.96658,32.83963],[39.96692,32.83922],[39.96727,32.83882],[39.9675,32.83848],[39.96921,32.8363],[39.96982,32.83555],[39.97013,32.83522],[39.97042,32.83478],[39.97096,32.83407],[39.97412,32.83003],[39.97448,32.82981],[39.97421,32.8296],[39.97344,32.83067],[39.97161,32.83299],[39.97082,32.83401],[39.97039,32.83451],[39.97012,32.83475],[39.96984,32.83512],[39.96922,32.83595],[39.96879,32.83644],[39.9683,32.83705],[39.96804,32.83737],[39.96757,32.83797],[39.96735,32.83827],[39.96709,32.83858],[39.96658,32.83926],[39.96526,32.84091],[39.9649,32.84135],[39.9645,32.84184],[39.96385,32.84264],[39.9633,32.84332],[39.96248,32.84433],[39.96174,32.8453],[39.96117,32.84605],[39.96061,32.84672],[39.96027,32.84713],[39.95985,32.84769],[39.95958,32.84804],[39.95907,32.8487],[39.95853,32.84938],[39.95791,32.85016],[39.95757,32.85057],[39.95729,32.85092],[39.95647,32.85195],[39.95581,32.85275],[39.95551,32.85311],[39.9551,32.85359],[39.95414,32.85474],[39.95346,32.8556],[39.95264,32.85669],[39.95235,32.857],[39.95196,32.85739],[39.95145,32.85776],[39.95116,32.85791],[39.95082,32.85792],[39.95035,32.85773],[39.94975,32.85737],[39.94941,32.85704],[39.94876,32.85646],[39.94814,32.85601],[39.94782,32.85575],[39.94727,32.85539],[39.94698,32.85524],[39.94663,32.85506],[39.94622,32.85488],[39.9456,32.85472],[39.94503,32.85459],[39.94465,32.85455],[39.94412,32.85455],[39.94329,32.85454],[39.94259,32.85447],[39.94221,32.85438],[39.94186,32.85426],[39.94153,32.85424],[39.9407,32.85424],[39.9403,32.85425],[39.93993,32.85425],[39.93961,32.85425],[39.93826,32.85425],[39.9378,32.85423],[39.93747,32.85418],[39.93705,32.85419],[39.93628,32.85421],[39.93584,32.85416],[39.93547,32.85408],[39.93502,32.85388],[39.93441,32.85362],[39.93353,32.8532],[39.93313,32.85308],[39.93279,32.85311],[39.93205,32.85353],[39.93147,32.85394],[39.93106,32.85419],[39.9307,32.85432],[39.93035,32.85432],[39.92856,32.85472],[39.92806,32.85484],[39.92772,32.85498],[39.92718,32.85505],[39.92668,32.85503],[39.92618,32.855],[39.92471,32.85464],[39.92439,32.85456],[39.92397,32.85446],[39.92343,32.85431],[39.92304,32.85421],[39.92239,32.85404],[39.92199,32.85397],[39.92159,32.85395],[39.92125,32.85393],[39.92087,32.85391],[39.92035,32.85393],[39.91987,32.854],[39.9192,32.85404],[39.91816,32.85407],[39.9176,32.85409],[39.91703,32.85411],[39.91593,32.85414],[39.91556,32.85418],[39.91467,32.85423],[39.91415,32.85426],[39.9138,32.85413],[39.91363,32.85367],[39.91382,32.85235],[39.91395,32.85195],[39.91418,32.85056],[39.9143,32.85008],[39.914,32.85026],[39.91376,32.85191],[39.91371,32.85234],[39.91352,32.8534],[39.91355,32.85384],[39.91379,32.85424],[39.91413,32.85436],[39.91542,32.85431],[39.91592,32.85433],[39.91649,32.85431],[39.91702,32.85429],[39.91741,32.85428],[39.91758,32.85495],[39.91762,32.85538],[39.9178,32.85632],[39.91803,32.8573],[39.91825,32.85808],[39.91846,32.85879],[39.91868,32.85966],[39.92018,32.85897],[39.92094,32.85855],[39.92139,32.8583],[39.92201,32.85797],[39.92259,32.85765],[39.92381,32.85698],[39.92491,32.85636],[39.92599,32.8558],[39.92637,32.8556],[39.9268,32.85552],[39.92722,32.85544],[39.92755,32.85535],[39.928,32.8552],[39.92919,32.85502],[39.92973,32.85478],[39.93006,32.8547],[39.93043,32.8546],[39.93091,32.85443],[39.93132,32.85421],[39.9321,32.85365],[39.93257,32.85334],[39.93291,32.85323],[39.93329,32.85327],[39.93398,32.85359],[39.93467,32.85392],[39.93513,32.85412],[39.93548,32.85423],[39.93587,32.85432],[39.9362,32.85435],[39.93667,32.85437],[39.93701,32.85437],[39.93741,32.85438],[39.93776,32.85438],[39.93883,32.85437],[39.93993,32.85438],[39.9405,32.85439],[39.94138,32.8544],[39.94173,32.85444],[39.9421,32.85453],[39.94253,32.85456],[39.94301,32.8546],[39.94346,32.85463],[39.94387,32.85464],[39.94423,32.85465],[39.94467,32.85464],[39.94519,32.85472],[39.94552,32.85479],[39.9461,32.85495],[39.94687,32.85528],[39.94722,32.85547],[39.94767,32.85577],[39.94823,32.85618],[39.94867,32.85654],[39.94898,32.85679],[39.94962,32.85738],[39.94982,32.85776],[39.94979,32.85835],[39.94976,32.85892],[39.94992,32.85929],[39.95025,32.85946],[39.95056,32.85937],[39.95085,32.85906],[39.95126,32.85858],[39.9747,32.82983],[39.97645,32.82941],[39.97734,32.82904],[39.97776,32.82892],[39.97855,32.82875],[39.97902,32.82864],[39.97961,32.82844],[39.97996,32.82841],[39.98035,32.82844],[39.98071,32.82854],[39.98117,32.82902],[39.98178,32.82967],[39.98253,32.83059],[39.98294,32.83101],[39.98331,32.83118],[39.9842,32.83119],[39.98434,32.83081],[39.98445,32.83032],[39.98453,32.82976],[39.98456,32.8291],[39.98455,32.82833],[39.98451,32.82742],[39.98444,32.82608],[39.98438,32.82506],[39.98441,32.82456],[39.98468,32.82386],[39.98539,32.82335],[39.98584,32.82304],[39.98617,32.82273],[39.98659,32.8223],[39.98693,32.82188],[39.98729,32.82143],[39.98761,32.82096],[39.9878,32.82058],[39.98796,32.82014],[39.98831,32.81983],[39.98865,32.81973],[39.9897,32.81943],[39.9905,32.8192],[39.99127,32.81913],[39.99262,32.81914],[39.99379,32.81916],[39.99423,32.81917],[39.99456,32.81911],[39.9949,32.8192],[39.99538,32.81925],[39.99586,32.81932],[39.99636,32.81948],[39.99677,32.81967],[39.9971,32.81985],[39.99752,32.82009],[39.99919,32.82112],[40.00126,32.82225],[40.00189,32.82256],[40.00259,32.82289],[40.00302,32.82308],[40.00334,32.82311],[40.0039,32.82331],[40.00421,32.82343],[40.00526,32.82377],[40.00697,32.82437],[40.00869,32.8249],[40.01032,32.82543],[40.01126,32.82574],[40.01289,32.82632],[40.0133,32.82647],[40.01379,32.82644],[40.01415,32.82621],[40.01516,32.82337],[40.01589,32.82092],[40.01611,32.82002],[40.01632,32.81967],[40.01669,32.82003],[40.01708,32.8202],[40.01759,32.82037],[40.01863,32.82071],[40.01802,32.82067],[40.01705,32.82037],[40.01652,32.82017],[40.01613,32.82064],[40.01592,32.82134],[40.01567,32.82214],[40.01528,32.8234],[40.01499,32.82433],[40.01466,32.82539],[40.01456,32.82582],[40.01451,32.82652],[40.01444,32.82727],[40.01412,32.82719],[40.01351,32.82696],[40.01305,32.82679],[40.0112,32.82606],[40.01066,32.82587],[40.01003,32.82566],[40.00921,32.82538],[40.00781,32.82496],[40.00712,32.82474],[40.00665,32.82459],[40.00399,32.8237],[40.00326,32.82349],[40.00255,32.82323],[40.00202,32.82296],[40.00104,32.82245],[39.99923,32.82148],[39.99816,32.82083],[39.99785,32.82066],[39.99649,32.81988],[39.99616,32.81973],[39.99573,32.81958],[39.99511,32.81947],[39.99479,32.81943],[39.99443,32.8194],[39.9941,32.81937],[39.99351,32.81934],[39.99307,32.81933],[39.99262,32.81932],[39.99161,32.81932],[39.99059,32.8194],[39.98945,32.81972],[39.98856,32.81994],[39.9882,32.82023],[39.98787,32.82069],[39.98764,32.82111],[39.98742,32.82144],[39.98672,32.82226],[39.98628,32.82277],[39.98593,32.8231],[39.98558,32.82336],[39.98493,32.82372],[39.98466,32.82402],[39.9845,32.82458],[39.98447,32.82507],[39.9845,32.82564],[39.98459,32.82742],[39.98463,32.8282],[39.98465,32.82869],[39.98464,32.82918],[39.98458,32.82987],[39.9845,32.83036],[39.98439,32.83091],[39.9842,32.83119]],
     },
     {
-      id: "M1B", name: "M1B: Yenikapı → Kirazlı", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_yenikapi", "stop_aksaray", "stop_emniyet_fatih", "stop_topkapi_ulubatli", "stop_bayrampasa_maltepe", "stop_sagmalcilar", "stop_kocatepe", "stop_otogar", "stop_esenler", "stop_menderes", "stop_ucyuzlu", "stop_bagcilar_meydan", "stop_kirazli"],
+      id: "EGO_279", name: "EGO 279 Otobüsü (Yükseltepe-Ayvalı-Ulus-Kızılay-Bakanlıklar)", mode: "otobus", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-26",
+      stopIds: ["stop_kizilay", "stop_ulus"],
+      geometry: [[39.99506,32.81082],[39.99537,32.81076],[39.99506,32.81082],[39.99383,32.81062],[39.99343,32.8106],[39.99298,32.81059],[39.99252,32.81058],[39.99206,32.81059],[39.99161,32.81079],[39.99106,32.81119],[39.99067,32.81132],[39.99029,32.81132],[39.98986,32.81158],[39.98955,32.81195],[39.98932,32.81225],[39.98902,32.81263],[39.98866,32.81316],[39.98848,32.8137],[39.98833,32.81428],[39.98812,32.81466],[39.98751,32.81517],[39.98699,32.81564],[39.98671,32.81608],[39.9863,32.81579],[39.98596,32.81539],[39.98544,32.81502],[39.98508,32.81495],[39.9843,32.81501],[39.98385,32.815],[39.98376,32.81544],[39.98364,32.81617],[39.98353,32.81703],[39.98343,32.81787],[39.98331,32.81859],[39.98317,32.81914],[39.98293,32.81957],[39.98253,32.82012],[39.98202,32.82075],[39.98121,32.82163],[39.98084,32.82203],[39.98042,32.82243],[39.98001,32.82269],[39.97964,32.82291],[39.97931,32.82311],[39.97898,32.82331],[39.97851,32.82357],[39.97815,32.82384],[39.97773,32.82426],[39.97717,32.82484],[39.97679,32.82518],[39.97617,32.82563],[39.97473,32.82658],[39.97415,32.82696],[39.97344,32.82746],[39.97299,32.82794],[39.97269,32.82827],[39.97213,32.82917],[39.9716,32.83034],[39.97137,32.83073],[39.9711,32.83107],[39.97078,32.83138],[39.97041,32.83159],[39.9699,32.83171],[39.9692,32.83178],[39.96888,32.83178],[39.96881,32.83254],[39.96898,32.83328],[39.96936,32.83422],[39.96951,32.83465],[39.96949,32.83518],[39.96932,32.8356],[39.96902,32.83609],[39.96879,32.83644],[39.9683,32.83705],[39.96804,32.83737],[39.96757,32.83797],[39.96735,32.83827],[39.96709,32.83858],[39.96658,32.83926],[39.96526,32.84091],[39.9649,32.84135],[39.9645,32.84184],[39.96385,32.84264],[39.9633,32.84332],[39.96248,32.84433],[39.96174,32.8453],[39.96117,32.84605],[39.96061,32.84672],[39.96027,32.84713],[39.95985,32.84769],[39.95958,32.84804],[39.95907,32.8487],[39.95853,32.84938],[39.95791,32.85016],[39.95757,32.85057],[39.95729,32.85092],[39.95647,32.85195],[39.95581,32.85275],[39.95551,32.85311],[39.9551,32.85359],[39.95414,32.85474],[39.95346,32.8556],[39.95264,32.85669],[39.95235,32.857],[39.95196,32.85739],[39.95145,32.85776],[39.95116,32.85791],[39.95082,32.85792],[39.95035,32.85773],[39.94975,32.85737],[39.94941,32.85704],[39.94876,32.85646],[39.94814,32.85601],[39.94782,32.85575],[39.94727,32.85539],[39.94698,32.85524],[39.94663,32.85506],[39.94622,32.85488],[39.9456,32.85472],[39.94503,32.85459],[39.94465,32.85455],[39.94412,32.85455],[39.94329,32.85454],[39.94259,32.85447],[39.94221,32.85438],[39.94186,32.85426],[39.94153,32.85424],[39.9407,32.85424],[39.9403,32.85425],[39.93993,32.85425],[39.93961,32.85425],[39.93826,32.85425],[39.9378,32.85423],[39.93747,32.85418],[39.93705,32.85419],[39.93628,32.85421],[39.93584,32.85416],[39.93547,32.85408],[39.93502,32.85388],[39.93441,32.85362],[39.93353,32.8532],[39.93313,32.85308],[39.93279,32.85311],[39.93205,32.85353],[39.93147,32.85394],[39.93106,32.85419],[39.9307,32.85432],[39.93035,32.85432],[39.92856,32.85472],[39.92806,32.85484],[39.92772,32.85498],[39.92718,32.85505],[39.92668,32.85503],[39.92618,32.855],[39.92471,32.85464],[39.92439,32.85456],[39.92397,32.85446],[39.92343,32.85431],[39.92304,32.85421],[39.92239,32.85404],[39.92199,32.85397],[39.92159,32.85395],[39.92125,32.85393],[39.92087,32.85391],[39.92035,32.85393],[39.91987,32.854],[39.9192,32.85404],[39.91816,32.85407],[39.9176,32.85409],[39.91703,32.85411],[39.91593,32.85414],[39.91556,32.85418],[39.91467,32.85423],[39.91415,32.85426],[39.9138,32.85413],[39.91363,32.85367],[39.91382,32.85235],[39.91395,32.85195],[39.91418,32.85056],[39.9143,32.85008],[39.914,32.85026],[39.91376,32.85191],[39.91371,32.85234],[39.91352,32.8534],[39.91355,32.85384],[39.91379,32.85424],[39.91413,32.85436],[39.91542,32.85431],[39.91592,32.85433],[39.91649,32.85431],[39.91702,32.85429],[39.91741,32.85428],[39.91811,32.85427],[39.91888,32.85426],[39.91923,32.85425],[39.91962,32.85423],[39.91999,32.85422],[39.92031,32.85421],[39.92069,32.85419],[39.92119,32.85418],[39.92159,32.8542],[39.92193,32.85423],[39.92233,32.85429],[39.92266,32.85436],[39.92301,32.85442],[39.92424,32.85473],[39.92506,32.85496],[39.92605,32.85523],[39.92648,32.85535],[39.92691,32.85538],[39.9273,32.85532],[39.92764,32.85527],[39.928,32.8552],[39.92919,32.85502],[39.92973,32.85478],[39.93006,32.8547],[39.93043,32.8546],[39.93091,32.85443],[39.93132,32.85421],[39.9321,32.85365],[39.93257,32.85334],[39.93291,32.85323],[39.93329,32.85327],[39.93398,32.85359],[39.93467,32.85392],[39.93513,32.85412],[39.93548,32.85423],[39.93587,32.85432],[39.9362,32.85435],[39.93667,32.85437],[39.93701,32.85437],[39.93741,32.85438],[39.93776,32.85438],[39.93883,32.85437],[39.93993,32.85438],[39.9405,32.85439],[39.94138,32.8544],[39.94173,32.85444],[39.9421,32.85453],[39.94253,32.85456],[39.94301,32.8546],[39.94346,32.85463],[39.94387,32.85464],[39.94423,32.85465],[39.94467,32.85464],[39.94519,32.85472],[39.94552,32.85479],[39.9461,32.85495],[39.94687,32.85528],[39.94722,32.85547],[39.94767,32.85577],[39.94823,32.85618],[39.94867,32.85654],[39.94898,32.85679],[39.94962,32.85738],[39.94982,32.85776],[39.94979,32.85835],[39.94976,32.85892],[39.94992,32.85929],[39.95025,32.85946],[39.95056,32.85937],[39.95085,32.85906],[39.95126,32.85858],[39.95174,32.85801],[39.95253,32.85714],[39.95278,32.85684],[39.95378,32.85558],[39.95432,32.85483],[39.955,32.85397],[39.95532,32.85356],[39.95563,32.85315],[39.95587,32.85285],[39.95728,32.85107],[39.95759,32.85069],[39.95793,32.85027],[39.95823,32.84988],[39.95963,32.84821],[39.96005,32.84776],[39.96047,32.84728],[39.96087,32.84681],[39.96141,32.84609],[39.96174,32.84562],[39.96215,32.84508],[39.96327,32.84367],[39.96371,32.84312],[39.9642,32.84252],[39.96455,32.8421],[39.96525,32.84125],[39.96658,32.83963],[39.96692,32.83922],[39.96727,32.83882],[39.9675,32.83848],[39.96921,32.8363],[39.96982,32.83555],[39.97013,32.83522],[39.97022,32.83481],[39.96994,32.83462],[39.96961,32.83416],[39.9693,32.83367],[39.96909,32.83317],[39.96896,32.83249],[39.96893,32.83199],[39.96938,32.83191],[39.96974,32.83186],[39.97011,32.83179],[39.97046,32.83169],[39.97084,32.83148],[39.97113,32.83122],[39.97137,32.83092],[39.97162,32.83052],[39.97181,32.8301],[39.97198,32.82973],[39.9722,32.82927],[39.97244,32.82886],[39.97266,32.82853],[39.97314,32.82792],[39.97348,32.82754],[39.97386,32.82725],[39.97459,32.8268],[39.97621,32.82573],[39.9769,32.82525],[39.97722,32.82497],[39.97778,32.82436],[39.9781,32.82403],[39.97842,32.82376],[39.9788,32.82351],[39.97921,32.82328],[39.98036,32.82261],[39.98071,32.82233],[39.9811,32.8219],[39.98219,32.82077],[39.98253,32.82047],[39.98296,32.82013],[39.98308,32.81951],[39.98376,32.81544],[39.98401,32.81517],[39.9863,32.81579],[39.98664,32.81599],[39.99566,32.81085],[39.99617,32.81081],[39.99659,32.81072],[39.9969,32.81069],[39.99728,32.81065],[39.99778,32.81069],[39.99811,32.81064],[39.99853,32.81042],[39.9991,32.81015],[39.99957,32.80993],[39.99995,32.80975],[40.00029,32.80958],[40.00096,32.80924],[40.0015,32.80905],[40.00184,32.80894],[40.00266,32.80847],[40.00305,32.8082],[40.0034,32.80789],[40.00365,32.80764],[40.00401,32.80718],[40.00438,32.80684],[40.00482,32.80653],[40.00517,32.80631],[40.0055,32.8061],[40.00576,32.80578],[40.0061,32.80535],[40.00637,32.80493],[40.00666,32.80451],[40.00705,32.80413],[40.00715,32.80366],[40.00678,32.80337],[40.00636,32.80318],[40.00601,32.80303],[40.0053,32.80247],[40.00468,32.80251],[40.00421,32.80276],[40.0038,32.8031],[40.00351,32.80335],[40.00304,32.80375],[40.00272,32.80391],[40.00238,32.80396],[40.00226,32.80356],[40.00238,32.80298],[40.00251,32.8023],[40.00263,32.80168],[40.00274,32.8012],[40.00287,32.80063],[40.00299,32.80008],[40.00328,32.79894],[40.00348,32.79849],[40.00371,32.79807],[40.00419,32.79752],[40.00451,32.79738],[40.00458,32.79737]],
     },
     {
-      id: "B1", name: "Marmaray: Gebze - Halkalı", mode: "marmaray", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_gebze", "stop_darica", "stop_osmangazi", "stop_gtu_fatih", "stop_cayirova", "stop_tuzla", "stop_icmeler", "stop_aydintepe", "stop_guzelyali", "stop_tersane", "stop_kaynarca", "stop_pendik", "stop_yunus", "stop_kartal", "stop_basak", "stop_atalar", "stop_cevizli", "stop_maltepe", "stop_sureyya_plaji", "stop_idealtepe", "stop_kucukyali", "stop_bostanci", "stop_suadiye", "stop_erenkoy", "stop_goztepe", "stop_feneryolu", "stop_sogutlucesme", "stop_ayrilik_cesmesi", "stop_uskudar", "stop_sirkeci", "stop_yenikapi", "stop_kazlicesme", "stop_zeytinburnu_fisekhane", "stop_yeni_mahalle", "stop_bakirkoy", "stop_atakoy", "stop_yesilyurt", "stop_yesilkoy", "stop_florya_akvaryum", "stop_florya", "stop_kucukcekmece", "stop_mustafa_kemal", "stop_halkali"],
+      id: "EGO_267", name: "EGO 267 Otobüsü (Etlik-Kazım Karabekir-Beşevler)", mode: "otobus", verified: true,
+      source: "OSM/Overpass, EGO Genel Müdürlüğü — 2026-08-26",
+      stopIds: ["stop_etlik"],
+      geometry: [[39.92107,32.83557],[39.92136,32.83599],[39.92214,32.83743],[39.9224,32.83796],[39.92263,32.8384],[39.9229,32.83881],[39.92424,32.84034],[39.92456,32.84135],[39.92469,32.84199],[39.92513,32.8418],[39.92566,32.84156],[39.92608,32.84139],[39.92669,32.84115],[39.92767,32.84075],[39.9282,32.84049],[39.92858,32.84025],[39.92894,32.84002],[39.92969,32.83942],[39.93023,32.83893],[39.93106,32.83801],[39.93148,32.83754],[39.9322,32.83765],[39.93267,32.83767],[39.93416,32.83757],[39.93475,32.83745],[39.93511,32.83749],[39.93546,32.83769],[39.93586,32.838],[39.93669,32.83872],[39.93755,32.83946],[39.9379,32.83977],[39.93864,32.8404],[39.93906,32.84084],[39.94033,32.84236],[39.94079,32.84286],[39.94107,32.84316],[39.9418,32.84395],[39.94232,32.84446],[39.94385,32.84615],[39.94473,32.84706],[39.94525,32.84769],[39.94571,32.84822],[39.94636,32.8489],[39.94803,32.85075],[39.94836,32.85112],[39.94877,32.85157],[39.95036,32.85333],[39.95108,32.85414],[39.95155,32.85492],[39.95185,32.85538],[39.95213,32.85563],[39.95249,32.85558],[39.953,32.85502],[39.95333,32.85486],[39.95365,32.85493],[39.9539,32.85518],[39.9543,32.85547],[39.95459,32.85529],[39.95474,32.85461],[39.955,32.85397],[39.95532,32.85356],[39.95563,32.85315],[39.95587,32.85285],[39.95728,32.85107],[39.95759,32.85069],[39.95793,32.85027],[39.95823,32.84988],[39.95963,32.84821],[39.96005,32.84776],[39.96047,32.84728],[39.96087,32.84681],[39.96141,32.84609],[39.96174,32.84562],[39.96215,32.84508],[39.96327,32.84367],[39.96371,32.84312],[39.9642,32.84252],[39.96455,32.8421],[39.96525,32.84125],[39.96658,32.83963],[39.96692,32.83922],[39.96727,32.83882],[39.96766,32.83922],[39.96747,32.83886],[39.96729,32.83847],[39.967,32.8387],[39.96658,32.83926],[39.96526,32.84091],[39.9649,32.84135],[39.9645,32.84184],[39.96385,32.84264],[39.9633,32.84332],[39.96248,32.84433],[39.96174,32.8453],[39.96117,32.84605],[39.96061,32.84672],[39.96027,32.84713],[39.95985,32.84769],[39.95958,32.84804],[39.95907,32.8487],[39.95853,32.84938],[39.95791,32.85016],[39.95757,32.85057],[39.95729,32.85092],[39.95647,32.85195],[39.95581,32.85275],[39.95551,32.85311],[39.9551,32.85359],[39.95414,32.85474],[39.95381,32.85477],[39.95343,32.85468],[39.95309,32.85478],[39.95279,32.85509],[39.95248,32.85519],[39.95216,32.85493],[39.95174,32.85446],[39.95133,32.85414],[39.94882,32.85136],[39.94675,32.84909],[39.94623,32.84855],[39.94575,32.84804],[39.94533,32.84756],[39.94477,32.84698],[39.94387,32.84606],[39.94237,32.84439],[39.9419,32.84384],[39.94087,32.84272],[39.94004,32.84183],[39.93911,32.84077],[39.93868,32.84031],[39.93796,32.83966],[39.93706,32.83882],[39.93616,32.83798],[39.93587,32.83774],[39.93562,32.83741],[39.93536,32.83703],[39.93504,32.83638],[39.9348,32.83561],[39.9344,32.83429],[39.93404,32.83305],[39.93357,32.83148],[39.93311,32.82989],[39.93301,32.82928],[39.93275,32.82905],[39.93247,32.82936],[39.93122,32.82995],[39.9296,32.83066],[39.92924,32.83082],[39.92757,32.83152],[39.92701,32.83176],[39.92596,32.83224],[39.92566,32.83239],[39.92531,32.83253],[39.92475,32.83278],[39.92433,32.83297],[39.92389,32.8332],[39.92333,32.83362],[39.92299,32.83393],[39.92254,32.83437],[39.92214,32.83473],[39.9217,32.83506],[39.92129,32.83536],[39.96766,32.83922],[39.96843,32.84027],[39.96898,32.84103],[39.9695,32.84172],[39.96972,32.84202],[39.97007,32.84251],[39.97034,32.84281],[39.97073,32.84307],[39.97107,32.84315],[39.97142,32.84309],[39.97222,32.84268],[39.97262,32.8424],[39.97293,32.8422],[39.97354,32.84206],[39.97405,32.84179],[39.97534,32.84117],[39.97589,32.84087],[39.97654,32.8407],[39.97697,32.84061],[39.97731,32.84052],[39.97765,32.84024],[39.97828,32.8391],[39.97849,32.8385],[39.9786,32.83799],[39.97869,32.83755],[39.97906,32.83718],[39.97935,32.83699],[39.97977,32.83674],[39.98078,32.83643],[39.98119,32.83628],[39.98152,32.83602],[39.98188,32.83566],[39.98217,32.83533],[39.98253,32.83498],[39.98295,32.83467],[39.98335,32.83448],[39.98368,32.83447],[39.9837,32.834],[39.98378,32.83288],[39.9843,32.83122],[39.9845,32.83036],[39.98458,32.82987],[39.98464,32.82918],[39.98465,32.82869],[39.98463,32.8282],[39.98459,32.82742],[39.9845,32.82564],[39.98447,32.82507],[39.9845,32.82458],[39.98466,32.82402],[39.98493,32.82372],[39.98543,32.82345],[39.98581,32.82321],[39.98628,32.82277],[39.98672,32.82226],[39.98742,32.82144],[39.98764,32.82111],[39.98787,32.82069],[39.98809,32.82036],[39.98833,32.82008],[39.98945,32.81972],[39.99059,32.8194],[39.99135,32.81933],[39.99262,32.81932],[39.99307,32.81933],[39.99351,32.81934],[39.9941,32.81937],[39.99443,32.8194],[39.9946,32.81987],[39.99482,32.8209],[39.9949,32.82151],[39.99493,32.82206],[39.99489,32.82295],[39.99481,32.82399],[39.99476,32.82473],[39.9947,32.8252],[39.9946,32.8256],[39.99446,32.82598],[39.99403,32.82717],[39.99379,32.82788],[39.99365,32.82831],[39.99341,32.82894],[39.99327,32.82936],[39.99301,32.83022],[39.99334,32.83038],[39.99386,32.83063],[39.99371,32.83116],[39.99353,32.83192],[39.99377,32.83235],[39.99402,32.83291],[39.99424,32.83342],[39.99481,32.83452],[39.99508,32.83492],[39.9957,32.83595],[39.99611,32.83659],[39.99655,32.83736],[39.99678,32.83783],[39.99745,32.83788],[39.99689,32.83783],[39.99659,32.8373],[39.99578,32.83589],[39.99488,32.83444],[39.99442,32.83358],[39.99409,32.83283],[39.99375,32.83209],[39.99371,32.83116],[39.99745,32.83788],[39.99787,32.83788],[39.99862,32.83785],[39.9994,32.83782],[39.99992,32.83781],[40.00122,32.83738],[40.00187,32.83726],[40.00264,32.83711],[40.00313,32.83704],[40.004,32.83696],[40.00449,32.83692],[40.00487,32.83691],[40.00538,32.83696],[40.00601,32.83708],[40.00679,32.83744],[40.00738,32.83767],[40.00776,32.83768],[40.0081,32.83763],[40.00841,32.83754],[40.00901,32.83735],[40.00945,32.83728],[40.01057,32.83726],[40.01146,32.8372],[40.01239,32.83714],[40.01276,32.83712],[40.01357,32.83705],[40.01397,32.83701],[40.01435,32.83691],[40.01468,32.83664],[40.01489,32.83613],[40.01511,32.8358],[40.0151,32.83532],[40.01477,32.83397],[40.01449,32.83289],[40.01406,32.83129],[40.01368,32.83057],[40.01343,32.83031],[40.01358,32.82974],[40.01393,32.82861],[40.01401,32.82811],[40.01407,32.82757],[40.01414,32.82708],[40.01422,32.8265],[40.01437,32.82594],[40.01516,32.82337],[40.01589,32.82092],[40.01611,32.82002],[40.01632,32.81967],[40.01669,32.82003],[40.01708,32.8202],[40.01759,32.82037],[40.01863,32.82071],[40.01802,32.82067],[40.01705,32.82037],[40.01652,32.82017],[40.01613,32.82064],[40.01592,32.82134],[40.01567,32.82214],[40.01528,32.8234],[40.01499,32.82433],[40.01466,32.82539],[40.01456,32.82582],[40.01451,32.82652],[40.01444,32.82727],[40.01429,32.82785],[40.0141,32.82852],[40.01386,32.82934],[40.01364,32.82988],[40.01352,32.83027],[40.01397,32.83086],[40.01416,32.83125],[40.01464,32.83301],[40.01503,32.83455],[40.01516,32.83505],[40.01539,32.83564],[40.0152,32.83597],[40.01492,32.83627],[39.99482,32.8209],[39.99482,32.82026],[39.99479,32.81943],[39.99458,32.81909],[39.99423,32.81917],[39.99379,32.81916],[39.99262,32.81914],[39.99133,32.81913],[39.9905,32.8192],[39.9897,32.81943],[39.98865,32.81973],[39.98831,32.81983],[39.98799,32.81987],[39.9878,32.82058],[39.98761,32.82096],[39.98729,32.82143],[39.98693,32.82188],[39.98659,32.8223],[39.98617,32.82273],[39.98584,32.82304],[39.98552,32.82326],[39.98489,32.82364],[39.98451,32.82422],[39.98438,32.82506],[39.98444,32.82608],[39.98451,32.82742],[39.98455,32.82833],[39.98456,32.8291],[39.98453,32.82976],[39.98445,32.83032],[39.98434,32.83081],[39.9842,32.83119],[39.98331,32.83118],[39.98294,32.83101],[39.98253,32.83059],[39.98199,32.82993],[39.98117,32.82902],[39.98071,32.82854],[39.98035,32.82844],[39.97996,32.82841],[39.98002,32.83037],[39.97991,32.83173],[39.97975,32.83308],[39.97976,32.83387],[39.97982,32.83472],[39.97981,32.8359],[39.97984,32.83647],[39.9788,32.83743],[39.9786,32.83799],[39.97354,32.84206],[39.97327,32.84227],[39.973,32.84253],[39.97265,32.84257],[39.97222,32.84268]],
     },
     {
-      id: "M3", name: "M3: Bakırköy Sahil → Kayaşehir Merkez", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_bakirkoy_sahil", "stop_ozgurluk_meydani", "stop_incirli", "stop_haznedar", "stop_ilkyuva", "stop_yildiztepe", "stop_molla_gurani", "stop_kirazli", "stop_yeni_mahalle_2", "stop_mahmutbey", "stop_istoc", "stop_ikitelli_sanayi", "stop_turgut_ozal", "stop_siteler", "stop_basak_konutlari", "stop_metrokent", "stop_onurkent", "stop_sehir_hastanesi", "stop_toplu_konutlar", "stop_kayasehir_merkez"],
-    },
-    {
-      id: "M9", name: "M9: Ataköy → Olimpiyat", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_atakoy", "stop_yenibosna", "stop_cobancesme", "stop_29_ekim_cumhuriyet", "stop_dogu_sanayi", "stop_mimar_sinan", "stop_15_temmuz", "stop_halkali_caddesi", "stop_ataturk_mahallesi", "stop_bahariye_2", "stop_masko", "stop_ikitelli_sanayi", "stop_ziya_gokalp", "stop_olimpiyat"],
-    },
-    {
-      id: "T4", name: "T4: Mescid-i Selam → Topkapı", mode: "tramvay", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_mescid_i_selam", "stop_cebeci", "stop_yeni_mahalle_3", "stop_haci_sukru", "stop_50_yil_bastabya", "stop_cumhuriyet_mahallesi", "stop_kiptas_venezia", "stop_karadeniz", "stop_taskopru", "stop_ali_fuat_basgil", "stop_bosna_cukurcesme", "stop_sagmalcilar", "stop_uluyol_berec", "stop_rami", "stop_topcular", "stop_demirkapi", "stop_sehitlik", "stop_edirnekapi", "stop_vatan", "stop_fetihkapi", "stop_topkapi"],
-    },
-    {
-      id: "M2", name: "M2: Hacıosman → Yenikapı", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_haciosman", "stop_darussafaka", "stop_ataturk_oto_sanayi", "stop_itu_ayazaga", "stop_sanayi", "stop_4_levent", "stop_levent", "stop_gayrettepe", "stop_sisli", "stop_osmanbey", "stop_taksim", "stop_sishane", "stop_halic", "stop_vezneciler", "stop_yenikapi", "stop_seyrantepe"],
-    },
-    {
-      id: "M6", name: "M6: Boğaziçi Üniversitesi/Hisarüstü → Levent", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_bogazici_universitesi_hisarustu", "stop_etiler", "stop_nispetiye", "stop_levent"],
-    },
-    {
-      id: "F3", name: "F3: Seyrantepe → Vadistanbul", mode: "funikuler", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_seyrantepe", "stop_vadi_istanbul"],
-    },
-    {
-      id: "M5", name: "M5: Üsküdar → Sultanbeyli", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_uskudar", "stop_fistikagaci", "stop_baglarbasi", "stop_altunizade", "stop_kisikli", "stop_bulgurlu", "stop_umraniye", "stop_carsi_2", "stop_yamanevler", "stop_cakmak", "stop_ihlamurkuyu", "stop_altinsehir", "stop_imam_hatip_lisesi", "stop_dudullu", "stop_necip_fazil", "stop_cekmekoy", "stop_meclis", "stop_sarigazi", "stop_sancaktepe_sehir_hastanesi", "stop_sancaktepe", "stop_samandira_merkez", "stop_veysel_karani", "stop_hasanpasa", "stop_sultanbeyli"],
-    },
-    {
-      id: "M7", name: "M7: Mecidiyeköy → Mahmutbey", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_mecidiyekoy", "stop_caglayan", "stop_kagithane", "stop_nurtepe", "stop_alibeykoy", "stop_circir_mahallesi", "stop_veysel_karani_aksemsettin", "stop_yesilpinar", "stop_k_zim_karabekir", "stop_yenimahalle", "stop_karadeniz_mahallesi", "stop_giyimkent_tekstilkent", "stop_oruc_reis_yuzyil", "stop_goztepe_2", "stop_mahmutbey", "stop_yildiz", "stop_fulya"],
-    },
-    {
-      id: "T5", name: "T5: Alibeyköy Cep Otogarı → Eminönü", mode: "tramvay", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_alibeykoy_cep_otogari", "stop_alibeykoy_metro", "stop_alibeykoy_merkez", "stop_universite", "stop_silahtaraga_mahallesi", "stop_eyupsultan_devlet_hastanesi", "stop_eyupsultan_teleferik", "stop_feshane", "stop_ayvansaray", "stop_balat", "stop_fener", "stop_cibali", "stop_kucukpazar", "stop_eminonu"],
-    },
-    {
-      id: "F4", name: "F4: Boğaziçi Üniversitesi/Hisarüstü → Aşiyan", mode: "funikuler", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_rumeli_hisarustu", "stop_asiyan"],
-    },
-    {
-      id: "M8", name: "M8: Bostancı → Parseller", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_bostanci", "stop_emin_ali_pasa", "stop_aysekadin", "stop_kozyatagi", "stop_kucukbakkalkoy", "stop_icerenkoy", "stop_kayisdagi", "stop_mevlana", "stop_imes", "stop_modoko", "stop_dudullu", "stop_huzur", "stop_parseller"],
-    },
-    {
-      id: "M11", name: "M11: Halkalı → Gayrettepe", mode: "metro", verified: true,
-      source: "OpenStreetMap/Overpass API — 2026-09-07",
-      stopIds: ["stop_halkali", "stop_halkali_stadi", "stop_olimpiyatkoy", "stop_kayasehir", "stop_ibn_haldun_universitesi", "stop_arnavutkoy_hastane", "stop_tasoluk", "stop_kargo_terminali", "stop_istanbul_havalimani", "stop_ihsaniye", "stop_gokturk", "stop_kemerburgaz", "stop_hasdal", "stop_kagithane", "stop_gayrettepe"],
-    },
-    {
-      id: "F_KADIKOY_BESIKTAS", name: "Vapur: Kadıköy İskelesi ↔ Beşiktaş İskelesi (Şehir Hatları)", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry, Şehir Hatları) — 2026-09-07",
-      stopIds: ["stop_kadikoy_iskele", "stop_besiktas_iskele"],
-    },
-    {
-      id: "F_KADIKOY_EMINONU", name: "Vapur: Kadıköy İskelesi ↔ Eminönü İskelesi", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry) — 2026-09-07",
-      stopIds: ["stop_kadikoy_iskele", "stop_eminonu_iskele"],
-    },
-    {
-      id: "F_KADIKOY_KARAKOY", name: "Vapur: Kadıköy İskelesi ↔ Karaköy (Turyol)", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry, Turyol) — 2026-09-07. Karaköy ucu için OSM'de ayrı bir iskele noktası yoktu, mevcut stop_karakoy (T1 tramvay hub'ı) yaklaşık konum olarak kullanıldı.",
-      stopIds: ["stop_kadikoy_iskele", "stop_karakoy"],
-    },
-    {
-      id: "F_KADIKOY_ADALAR", name: "Vapur: Kadıköy İskelesi ↔ Adalar (Kınalıada-Burgazada-Heybeliada-Büyükada)", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry, Şehir Hatları) — 2026-09-07",
-      stopIds: ["stop_kadikoy_iskele", "stop_kinaliada", "stop_burgazada", "stop_heybeliada", "stop_buyukada"],
-    },
-    {
-      id: "F_KABATAS_USKUDAR", name: "Vapur: Kabataş ↔ Üsküdar (İDO)", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry relation'ı, \"Kabataş-Üsküdar\") — 2026-09-07. OSM'de bu relation'ın gerçek iskele durak noktası yoktu; her iki uç için de mevcut raylı sistem hub'ı (stop_kabatas, stop_uskudar) YAKLAŞIK iskele konumu olarak kullanıldı — gerçekte iskeleler bu hub'ların hemen yanında.",
-      stopIds: ["stop_kabatas", "stop_uskudar"],
-    },
-    {
-      id: "F_EMINONU_USKUDAR", name: "Vapur: Eminönü İskelesi ↔ Üsküdar", mode: "vapur", verified: true,
-      source: "OpenStreetMap/Overpass API (route=ferry relation'ı, \"Eminönü-Üsküdar\") — 2026-09-07. Üsküdar ucu için OSM'de ayrı iskele noktası yoktu, mevcut stop_uskudar hub'ı YAKLAŞIK konum olarak kullanıldı.",
-      stopIds: ["stop_eminonu_iskele", "stop_uskudar"],
+      id: "EGO_PURSAKLAR_EST", name: "Yerel EGO otobüs hattı (TAHMİNİ — doğrulanmadı)", mode: "otobus", verified: false,
+      source: "Doğrulanamadı — OSM sorgusunda Pursaklar'ı hub'a doğrudan bağlayan isimli bir hat bulunamadı",
+      stopIds: ["stop_pursaklar_est", "stop_kizilay"],
     },
   ],
-  // Not: rota hesaplama (app.js -> resolveTransfer) artık bu listeye değil,
-  // hatlar arası GERÇEK ortak duraklardan kurulan bir graf araması (BFS)
-  // kullanıyor — ≥2 hatta hizmet eden gerçek aktarma istasyonlarının
-  // referans listesi olarak kalsın diye (ileride haritada "aktarma
-  // istasyonu" rozeti gibi bir UI için) burada tutuluyor.
-  hubStopIds: [
-    "stop_yenikapi", "stop_aksaray", "stop_taksim", "stop_sagmalcilar", "stop_bostanci",
-    "stop_kabatas", "stop_karakoy", "stop_eminonu", "stop_sirkeci", "stop_topkapi",
-    "stop_zeytinburnu", "stop_emniyet_fatih", "stop_topkapi_ulubatli", "stop_bayrampasa_maltepe",
-    "stop_kocatepe", "stop_otogar", "stop_yenibosna", "stop_ayrilik_cesmesi", "stop_goztepe",
-    "stop_kozyatagi", "stop_kucukyali", "stop_maltepe", "stop_kartal", "stop_pendik",
-    "stop_kirazli", "stop_uskudar", "stop_atakoy", "stop_halkali", "stop_mahmutbey",
-    "stop_ikitelli_sanayi", "stop_levent", "stop_gayrettepe", "stop_seyrantepe", "stop_dudullu",
-    "stop_kagithane",
-  ],
+
+  // Gerçek aktarma merkezleri: M1 hem Batıkent'i hem Kızılay'ı, M4 hem
+  // Ankara Gar'ı hem Kızılay'ı aynı sefer içinde geçtiği için bu üç durak
+  // birbirine "bindiğin aracı değiştirmeden" ulaşılabilir şekilde bağlıdır.
+  hubStopIds: ["stop_kizilay", "stop_batikent", "stop_gar"],
 };

@@ -3,7 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>İK Ulaşım &amp; Proje Eşleştirme Modülü — İstanbul Anadolu</title>
+<title>İK Harita</title>
+<script src="config.js?v=3"></script>
+<script src="site-lock.js?v=1"></script>
+<script>
+  (function () {
+    var lock = window.SITE_LOCK && SITE_LOCK.resolveSiteLock(window.SUPABASE_CONFIG || {}, window.location);
+    if (!lock || !lock.slug) return;
+    document.documentElement.classList.add("region-locked");
+    if (lock.title) document.title = lock.title;
+  })();
+</script>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -15,6 +25,11 @@
 
 <style>
   html, body { height: 100%; }
+  html.region-locked #regionSwitcher,
+  html.region-locked #sheetSyncBtn { display: none !important; }
+  #appShell { display: none !important; }
+  body.authenticated #appShell { display: flex !important; }
+  body.authenticated #loginScreen { display: none !important; }
   #map { height: 100%; width: 100%; }
 
   .pin-project {
@@ -35,6 +50,14 @@
   .pin-district {
     width: 16px; height: 16px; border-radius: 50%;
     border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  }
+  /* Google Haritalar tarzı sade kırmızı konum pini — sadece drawRoute()'un
+     hedef marker'ı için (aynı damla şekli, .pin-project ile paylaşılıyor,
+     sadece renk kırmızı ve animasyon yok). */
+  .pin-dest-flag {
+    width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
+    background: #ea4335; transform: rotate(-45deg);
+    border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,.4);
   }
 
   .mode-btn {
@@ -81,6 +104,12 @@
     background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 0.4rem;
     padding: 0.25rem 0.5rem;
   }
+  .live-arrival {
+    margin-top: 0.4rem; font-size: 0.68rem; font-weight: 600; line-height: 1.35;
+    border-radius: 0.4rem; padding: 0.28rem 0.45rem;
+  }
+  .live-arrival-live { color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
+  .live-arrival-static { color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; }
 
   .candidate-card {
     width: 100%; text-align: left; padding: 0.55rem 0.7rem; border-radius: 0.6rem;
@@ -150,18 +179,43 @@
 </head>
 <body class="bg-slate-50">
 
-<div id="mainLayout" class="flex h-screen w-screen overflow-hidden">
+<div id="loginScreen" class="min-h-screen flex items-center justify-center px-4 py-10">
+  <form id="loginForm" class="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-sm px-8 py-8">
+    <div class="text-[11px] font-bold tracking-[0.14em] uppercase text-indigo-600">Tepe İK</div>
+    <h1 class="mt-2 text-2xl font-bold text-slate-900">Giriş Yap</h1>
+    <p class="mt-1.5 text-sm text-slate-500">Harita ve projeler yalnızca kurumsal hesaplara açıktır.</p>
+    <label class="block mt-6 text-xs font-semibold text-slate-600" for="loginEmail">E-posta</label>
+    <input id="loginEmail" name="email" type="email" required autocomplete="username" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500" />
+    <label class="block mt-3 text-xs font-semibold text-slate-600" for="loginPassword">Şifre</label>
+    <input id="loginPassword" name="password" type="password" required autocomplete="current-password" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500" />
+    <p id="loginError" class="mt-3 text-xs text-red-600 min-h-[1rem]" role="alert"></p>
+    <button id="loginSubmit" type="submit" class="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg py-2.5 transition">Giriş Yap</button>
+  </form>
+</div>
+
+<div id="appShell" class="flex flex-col h-screen w-screen overflow-hidden">
+  <header class="h-12 shrink-0 z-20 bg-white border-b border-slate-200 flex items-center gap-3 px-4">
+    <div id="siteBrand" class="text-sm font-bold text-slate-800 shrink-0">İK Harita</div>
+    <div id="regionSwitcher" class="flex items-center gap-3 min-w-0">
+      <label for="regionSelect" class="text-xs font-semibold text-slate-500 shrink-0">Bölge</label>
+      <select id="regionSelect" class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white min-w-[240px]">
+        <option value="">Yükleniyor…</option>
+      </select>
+    </div>
+    <span id="regionStatus" class="text-[11px] text-slate-400 truncate"></span>
+    <div class="ml-auto flex items-center gap-2 shrink-0">
+      <button id="sheetSyncBtn" type="button" class="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60">Sheets'ten Güncelle</button>
+      <button id="logoutBtn" type="button" class="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Çıkış</button>
+    </div>
+  </header>
+  <div id="mainLayout" class="flex flex-1 min-h-0 overflow-hidden">
 
   <!-- SOL PANEL -->
   <aside class="w-[400px] shrink-0 flex flex-col border-r border-slate-200 bg-white" style="background-image: url('assets/tepe-logo.png'); background-size: 220px auto; background-position: center 60%; background-repeat: no-repeat;">
 
     <header class="px-5 pt-3 pb-2 border-b border-slate-100">
       <h1 class="text-base font-bold text-slate-800">Ulaşım &amp; Proje Eşleştirme</h1>
-      <p class="text-[11px] text-slate-500 mt-0.5">İK saha personeli işe alım — İstanbul Anadolu toplu taşıma modülü</p>
-      <!-- Önceden sağda dikey bir sütun olarak 5 buton üst üste diziliyordu
-           (~180px yükseklik) ve altındaki sonuç listesine neredeyse hiç yer
-           kalmıyordu, kısa ekranlarda özellikle. Tam genişlikte satır satır
-           sarılan bir düzene çevirince aynı butonlar ~2 satıra sığıyor. -->
+      <p id="moduleSubtitle" class="text-[11px] text-slate-500 mt-0.5">İK saha personeli işe alım — bölge Supabase'den yüklenir</p>
       <div class="flex flex-wrap gap-1.5 mt-2">
         <button id="urgentBtn" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white transition whitespace-nowrap">🔥 Acil Projeler</button>
         <button id="inactiveBtn" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white transition whitespace-nowrap">🔧 Proje Aç/Kapa</button>
@@ -180,8 +234,7 @@
     </div>
 
     <!-- Kaydırılabilir sonuç bölgesi: aday/proje seçimi + filtreler artık
-         haritanın üstündeki çubukta (bkz. #topToolbar) — burada sadece
-         sonuç listesine daha fazla yer kalsın diye taşındı. -->
+         haritanın üstündeki çubukta (bkz. #topToolbar). -->
     <div class="flex-1 overflow-y-auto min-h-0">
 
       <!-- YAKINDAKİ GERÇEK HATLAR (canlı Overpass keşfi) — varsayılan daraltılmış -->
@@ -201,9 +254,10 @@
           <button type="button" id="routeVariantFewestBtn" class="mode-btn">🔀 En Az Aktarmalı</button>
         </div>
         <div id="routeDetailWarning" class="hidden text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mb-2">
-          ⚠️ Bu rota tahmini bir hat içeriyor (gerçek bir hat verisiyle doğrulanamadı). İK, bu bölümü adaya kesin bilgi gibi aktarmamalı.
+          ⚠️ Bu rota tahmini bir hat içeriyor (gerçek EGO hattıyla doğrulanamadı). İK, bu bölümü adaya kesin bilgi gibi aktarmamalı.
         </div>
         <div id="routeDetailSteps"></div>
+        <div id="routeDolmusAlt" class="hidden mt-2.5 pt-2.5 border-t border-dashed border-amber-200"></div>
       </div>
 
       <div class="px-5 pt-3 pb-1.5">
@@ -234,7 +288,7 @@
           </select>
         </div>
         <div>
-          <label class="text-xs font-semibold text-slate-600 block mb-1">veya Adres / Semt Ara (ör. "Kadıköy Rıhtım")</label>
+          <label class="text-xs font-semibold text-slate-600 block mb-1">veya Adres / Semt Ara (ör. "Etlik Şehir Hastanesi")</label>
           <div class="flex gap-1.5">
             <input id="addressInput" type="text" placeholder="Adres, semt veya işletme adı…" class="w-64 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white" />
             <button id="addressSearchBtn" class="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition">Bul</button>
@@ -262,12 +316,11 @@
 
       <div>
         <label class="text-xs font-semibold text-slate-600 block mb-1">Pozisyon Filtresi</label>
-        <div class="flex flex-wrap gap-1.5">
+        <div id="positionFilters" class="flex flex-wrap gap-1.5">
           <button class="threshold-btn position-btn threshold-btn-active" data-position="all">Tümü</button>
           <button class="threshold-btn position-btn" data-position="Şeflik">Şeflik</button>
           <button class="threshold-btn position-btn" data-position="Temizlik Görevlisi">Temizlik Görevlisi</button>
           <button class="threshold-btn position-btn" data-position="Servis">Servis</button>
-          <button class="threshold-btn position-btn" data-position="Bahçıvan">Bahçıvan</button>
         </div>
       </div>
     </div>
@@ -278,6 +331,7 @@
       </div>
     </div>
   </main>
+  </div>
 </div>
 
 <!-- HAFTALIK ACİL PROJELER MODALI -->
@@ -340,13 +394,12 @@
           <option value="Şeflik">Şeflik</option>
           <option value="Temizlik Görevlisi">Temizlik Görevlisi</option>
           <option value="Servis">Servis</option>
-          <option value="Bahçıvan">Bahçıvan</option>
         </select>
         <p class="text-[10px] text-slate-400 mt-0.5">Bu proje için aranan pozisyon — Pozisyon Filtresi'nde bununla eşleşir.</p>
       </div>
       <div>
         <label class="text-xs font-semibold text-slate-600">Adres *</label>
-        <input name="address" required placeholder="ör. Levent, Beşiktaş" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
+        <input name="address" required placeholder="ör. Bilkent, Çankaya" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
       </div>
       <div class="grid grid-cols-2 gap-2">
         <div>
@@ -475,7 +528,7 @@
     <p class="text-[11px] text-slate-500 px-4 pt-2 leading-snug">Şu an listelenen adaylar hakkında soru sor — AI sadece bu ekrandaki gerçek verilere bakarak cevap verir, veride olmayanı uydurmaz.</p>
     <div id="candidateAiLog" class="flex-1 overflow-y-auto px-4 py-3 space-y-2 flex flex-col"></div>
     <div class="flex gap-2 px-4 py-3 border-t border-slate-100">
-      <input id="candidateAiInput" type="text" placeholder="ör. Kadıköy'e yakın en uygun 3 aday kim?" class="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
+      <input id="candidateAiInput" type="text" placeholder="ör. Bilkent'e yakın en uygun 3 aday kim?" class="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
       <button id="candidateAiSend" type="button" class="shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-600 hover:bg-violet-700 text-white">Sor</button>
     </div>
   </div>
@@ -519,8 +572,11 @@
   </div>
 </div>
 
-<script src="data.js?v=9"></script>
-<script src="app.js?v=10"></script>
-<script src="candidates.js?v=2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="data.js?v=57"></script>
+<script src="live_bus.js?v=1"></script>
+<script src="app.js?v=102"></script>
+<script src="tenant.js?v=6"></script>
+<script src="candidates.js?v=14"></script>
 </body>
 </html>
