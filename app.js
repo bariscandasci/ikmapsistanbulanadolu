@@ -2328,6 +2328,7 @@ function renderProjectCatalog() {
         terms: projectTerms(project),
         urgent: URGENT_PROJECT_IDS.has(project.id),
         referral: project.referral,
+        projectId: project.id,
         onClick: () => {
           const lat = Number(project.lat);
           const lng = Number(project.lng);
@@ -2388,6 +2389,7 @@ function renderOriginToProject(originId) {
         terms: projectTerms(row.project),
         urgent: URGENT_PROJECT_IDS.has(row.project.id),
         referral: row.project.referral,
+        projectId: row.project.id,
         onClick: () => {
           drawRoute(origin.coords, row, bucket);
           showRouteResult(row);
@@ -2548,9 +2550,10 @@ function attachLiveArrival(card, row) {
   });
 }
 
-function buildResultCard({ title, subtitle, durationMin, transfers, bucket, onClick, highlight, terms, urgent, referral, liveRow }) {
-  const card = document.createElement("button");
+function buildResultCard({ title, subtitle, durationMin, transfers, bucket, onClick, highlight, terms, urgent, referral, liveRow, projectId }) {
+  const card = document.createElement("div");
   card.className = `result-card ${highlight ? "result-card-active" : ""} ${urgent ? "result-card-urgent" : ""}`;
+  card.tabIndex = 0;
   const referralRow = referral ? `<div class="result-card-referral">📌 ${referral}</div>` : "";
   const servisNote = terms && terms.transport === "Servis"
     ? `<div class="result-card-servis-note">🚐 Bu projede firma servisi var — yukarıdaki süre/aktarma toplu taşıma senaryosuna göredir, gerçek servis güzergahı sisteme kayıtlı değil.</div>`
@@ -2593,11 +2596,45 @@ function buildResultCard({ title, subtitle, durationMin, transfers, bucket, onCl
     ${servisNote}
     <div data-role="live-arrival"></div>
   `;
+  if (projectId) {
+    const actions = document.createElement("div");
+    actions.className = "result-card-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.dataset.projectAction = "edit";
+    editBtn.className = "text-[11px] font-semibold px-2 py-1 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50";
+    editBtn.textContent = "Düzenle";
+    editBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openEditProjectModal(projectId);
+    });
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.dataset.projectAction = "delete";
+    deleteBtn.className = "text-[11px] font-semibold px-2 py-1 rounded-md border border-red-200 bg-white text-red-600 hover:bg-red-50";
+    deleteBtn.textContent = "Sil";
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteProjectById(projectId);
+    });
+    actions.append(editBtn, deleteBtn);
+    card.appendChild(actions);
+  }
   if (liveRow) attachLiveArrival(card, liveRow);
-  card.addEventListener("click", () => {
+  const activate = () => {
     document.querySelectorAll(".result-card").forEach((c) => c.classList.remove("result-card-active"));
     card.classList.add("result-card-active");
     onClick();
+  };
+  card.addEventListener("click", (event) => {
+    if (event.target.closest("[data-project-action]")) return;
+    activate();
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    activate();
   });
   return card;
 }
@@ -3492,6 +3529,104 @@ addProjectClose.addEventListener("click", closeAddProjectModal);
 addProjectCancel.addEventListener("click", closeAddProjectModal);
 addProjectModal.addEventListener("click", (e) => {
   if (e.target === addProjectModal) closeAddProjectModal();
+});
+
+const editProjectModal = document.getElementById("editProjectModal");
+const editProjectForm = document.getElementById("editProjectForm");
+const editProjectStatus = document.getElementById("editProjectStatus");
+const editProjectSubmit = document.getElementById("editProjectSubmit");
+let editingProjectId = null;
+
+function closeEditProjectModal() {
+  editProjectModal.classList.add("hidden");
+  editingProjectId = null;
+}
+
+function openEditProjectModal(projectId) {
+  const project = ANKARA_DATA.projects.find((row) => row.id === projectId);
+  if (!project || !editProjectForm) return;
+  editingProjectId = projectId;
+  editProjectForm.elements.name.value = project.name || "";
+  editProjectForm.elements.address.value = project.address || "";
+  editProjectForm.elements.salary.value = project.salary || "";
+  editProjectStatus.textContent = "";
+  editProjectModal.classList.remove("hidden");
+  editProjectForm.elements.name.focus();
+}
+
+function refreshProjectViews() {
+  stopApproxCoordsCache = null;
+  recomputeUrgentInactiveSets();
+  rebuildAllProjectMarkers();
+  rebuildProjectSelect();
+  if (typeof populateCandidateFsProjectSelect === "function") populateCandidateFsProjectSelect();
+  saveProjectsCache();
+  if (typeof TransitCache !== "undefined" && TransitCache.clearAll) TransitCache.clearAll();
+  runSearch();
+}
+
+async function deleteProjectById(projectId) {
+  const project = ANKARA_DATA.projects.find((row) => row.id === projectId);
+  if (!project) return;
+  if (!window.confirm(`"${project.name}" silinsin mi?`)) return;
+  try {
+    const result = await postToSheet({ action: "delete", id: project.id, title: project.name });
+    if (!result || result.ok === false) {
+      window.alert("Proje silinemedi. Kayıt bu bölgenin veritabanında yok.");
+      return;
+    }
+    ANKARA_DATA.projects = ANKARA_DATA.projects.filter((row) => row.id !== project.id);
+    if (projectSelect.value === project.id) projectSelect.value = "";
+    refreshProjectViews();
+  } catch (err) {
+    console.error(err);
+    window.alert("Proje silinemedi — bağlantıyı kontrol edip tekrar dene.");
+  }
+}
+
+document.getElementById("editProjectClose").addEventListener("click", closeEditProjectModal);
+document.getElementById("editProjectCancel").addEventListener("click", closeEditProjectModal);
+editProjectModal.addEventListener("click", (event) => {
+  if (event.target === editProjectModal) closeEditProjectModal();
+});
+
+editProjectForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const project = ANKARA_DATA.projects.find((row) => row.id === editingProjectId);
+  if (!project) return;
+  const name = editProjectForm.elements.name.value.trim();
+  const address = editProjectForm.elements.address.value.trim();
+  const salary = editProjectForm.elements.salary.value.trim();
+  if (!name || !address) return;
+  const patch = { name, address, salary };
+  editProjectSubmit.disabled = true;
+  editProjectStatus.textContent = address === (project.address || "") ? "Kaydediliyor…" : "Adres konumu bulunuyor…";
+  try {
+    if (address !== (project.address || "")) {
+      const geo = await geocodeAddress(address);
+      if (!geo) {
+        editProjectStatus.textContent = "Konum bulunamadı. Adresi biraz daha netleştirip tekrar dene.";
+        return;
+      }
+      const stop = nearestTransitStop(geo.lat, geo.lng);
+      patch.lat = geo.lat;
+      patch.lng = geo.lng;
+      patch.accessStopId = stop ? stop.id : "";
+    }
+    const { updatedIds } = await postBatchUpdate([{ id: project.id, patch }]);
+    if (!updatedIds.has(project.id)) {
+      editProjectStatus.textContent = "Kayıt veritabanında bulunamadı.";
+      return;
+    }
+    Object.assign(project, patch);
+    refreshProjectViews();
+    closeEditProjectModal();
+  } catch (err) {
+    console.error(err);
+    editProjectStatus.textContent = "Kaydedilemedi — bağlantıyı kontrol edip tekrar dene.";
+  } finally {
+    editProjectSubmit.disabled = false;
+  }
 });
 
 addProjectForm.addEventListener("submit", async (e) => {

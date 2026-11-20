@@ -76,7 +76,9 @@
     position: relative;
     width: 100%; text-align: left; padding: 0.65rem 0.75rem; border-radius: 0.65rem;
     border: 1px solid #e2e8f0; background: white; transition: all .12s;
+    cursor: pointer;
   }
+  .result-card-actions { display: flex; justify-content: flex-end; gap: 0.35rem; margin-top: 0.45rem; }
   .result-card:hover { border-color: #c7d2fe; background: #f8fafc; }
   .result-card-active { border-color: #4f46e5; background: #eef2ff; }
 
@@ -457,6 +459,35 @@
   </div>
 </div>
 
+<div id="editProjectModal" class="hidden fixed inset-0 bg-black/40 z-[2000] flex items-center justify-center p-6">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+      <h2 class="text-sm font-bold text-slate-800">Projeyi Düzenle</h2>
+      <button id="editProjectClose" type="button" class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
+    </div>
+    <form id="editProjectForm" class="px-4 py-3 space-y-2.5">
+      <p class="text-[11px] text-slate-500 leading-snug">Adres değişirse konum yeniden bulunur ve haritadaki pin güncellenir.</p>
+      <div>
+        <label class="text-xs font-semibold text-slate-600" for="editProjectName">Proje Adı *</label>
+        <input id="editProjectName" name="name" required class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600" for="editProjectAddress">Adres *</label>
+        <input id="editProjectAddress" name="address" required class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600" for="editProjectSalary">Maaş</label>
+        <input id="editProjectSalary" name="salary" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700" />
+      </div>
+      <p id="editProjectStatus" class="text-[11px] text-slate-500 leading-snug"></p>
+    </form>
+    <div class="flex justify-end gap-2 px-4 py-3 border-t border-slate-100">
+      <button id="editProjectCancel" type="button" class="px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100">Vazgeç</button>
+      <button id="editProjectSubmit" type="submit" form="editProjectForm" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADAY EXCEL YÜKLEME MODALI -->
 <div id="uploadCandidatesModal" class="hidden fixed inset-0 bg-black/40 z-[2000] flex items-center justify-center p-6">
   <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
@@ -654,7 +685,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="data.js?v=57"></script>
 <script src="live_bus.js?v=1"></script>
-<script src="app.js?v=102"></script>
+<script src="app.js?v=103"></script>
 <script src="tenant.js?v=7"></script>
 <script src="staff.js?v=1"></script>
 <script src="candidates.js?v=14"></script>
