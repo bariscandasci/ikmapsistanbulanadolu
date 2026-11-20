@@ -36,6 +36,7 @@ STATIC_FILES = [
     "site-lock.js",
     "app.js",
     "tenant.js",
+    "staff.js",
     "candidates.js",
     "data.js",
     "live_bus.js",

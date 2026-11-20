@@ -244,6 +244,7 @@
         project.id ||
         "proj_" +
           Date.now().toString(36);
+      project.id = id;
       const record = { ...project, id, role: "project" };
       delete record._rowId;
       const { data, error } = await client
@@ -261,7 +262,21 @@
         .single();
       if (error) throw error;
       project._rowId = data.id;
+      auditWrite(body);
       return { ok: true, id };
+    }
+    if (body.action === "delete") {
+      const project = (typeof ANKARA_DATA !== "undefined" ? ANKARA_DATA.projects : []).find((row) => row.id === body.id);
+      if (!project || !project._rowId) return { ok: false, notFound: [body.id] };
+      const { error } = await client
+        .from("map_points")
+        .delete()
+        .eq("id", project._rowId)
+        .eq("company_id", company.id)
+        .eq("region_id", region.id);
+      if (error) throw error;
+      auditWrite(body);
+      return { ok: true };
     }
     if (body.action === "updateBatch") {
       const notFound = [];
@@ -285,10 +300,48 @@
           .eq("company_id", company.id)
           .eq("region_id", region.id);
         if (error) throw error;
+        auditWrite({ action: "updateBatch", patches: [item] });
       }
       return { ok: true, notFound };
     }
     throw new Error("Desteklenmeyen Supabase yazması");
+  }
+
+  function auditWrite(body) {
+    if (!window.StaffDesk || typeof StaffDesk.record !== "function") return;
+    const projects = typeof ANKARA_DATA !== "undefined" && ANKARA_DATA.projects ? ANKARA_DATA.projects : [];
+    const titleOf = (id) => {
+      const row = projects.find((item) => item.id === id);
+      return (row && (row.name || row.title)) || id || "";
+    };
+    if (body.action === "add") {
+      StaffDesk.record({
+        action_type: "create",
+        target_title: (body.project && body.project.name) || "",
+        details: { id: body.project && body.project.id },
+      });
+      return;
+    }
+    if (body.action === "delete") {
+      StaffDesk.record({
+        action_type: "delete",
+        target_title: body.title || titleOf(body.id),
+        details: { id: body.id },
+      });
+      return;
+    }
+    (body.patches || []).forEach((item) => {
+      const patch = item.patch || {};
+      const keys = Object.keys(patch);
+      let actionType = "update";
+      if (keys.length === 1 && keys[0] === "urgent") actionType = "urgent_toggle";
+      else if (keys.length === 1 && keys[0] === "active") actionType = "status_toggle";
+      StaffDesk.record({
+        action_type: actionType,
+        target_title: titleOf(item.id),
+        details: patch,
+      });
+    });
   }
 
   async function boot() {
@@ -557,6 +610,11 @@
     }
     paintMap();
     setTimeout(paintMap, 200);
+    try {
+      if (window.StaffDesk) await StaffDesk.start();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function requireAuth() {
@@ -572,6 +630,7 @@
     client.auth.onAuthStateChange((event, session) => {
       if (!session || event === "SIGNED_OUT") {
         appStarted = false;
+        if (window.StaffDesk) StaffDesk.stop();
         showLogin();
         return;
       }
@@ -621,6 +680,7 @@
 
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
+      if (window.StaffDesk) await StaffDesk.stop();
       if (client) await client.auth.signOut();
       showLogin();
     });
